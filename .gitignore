@@ -1,0 +1,16 @@
+target/
+*.class
+*.jar
+*.log
+.idea/
+*.iml
+out/
+*.project
+*.classpath
+.settings/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+*~
+output.lua
