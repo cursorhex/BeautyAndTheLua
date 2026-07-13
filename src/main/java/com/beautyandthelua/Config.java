@@ -23,6 +23,7 @@ public class Config {
     public boolean singleLineTableIfSimple = true;
     public int singleLineTableMaxFields = 4;
     public boolean insertFinalNewline = true;
+    public boolean solveExpressions = true;
 
     public Config() {}
 

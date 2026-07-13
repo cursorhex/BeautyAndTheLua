@@ -5,6 +5,8 @@ import com.beautyandthelua.lexer.Token;
 import com.beautyandthelua.lexer.TokenType;
 import com.beautyandthelua.parser.Node;
 
+import java.util.List;
+
 public class Formatter implements Node.Visitor {
     private final Config config;
     private final StringBuilder output;
@@ -74,13 +76,15 @@ public class Formatter implements Node.Visitor {
 
     @Override
     public void visit(Node.Stmt stmt) {
+        List<Token> tokens = config.solveExpressions
+            ? ExpressionSolver.solve(stmt.tokens) : stmt.tokens;
         boolean afterValue = false;
         int tableDepth = 0;
         boolean suppressNextSpace = false;
         boolean suppressCloseBrace = false;
 
-        for (int i = 0; i < stmt.tokens.size(); i++) {
-            Token t = stmt.tokens.get(i);
+        for (int i = 0; i < tokens.size(); i++) {
+            Token t = tokens.get(i);
 
             if (t.type == TokenType.NEWLINE) {
                 nl();
@@ -94,9 +98,9 @@ public class Formatter implements Node.Visitor {
                 continue;
             }
 
-            Token prev = i > 0 ? stmt.tokens.get(i - 1) : null;
+            Token prev = i > 0 ? tokens.get(i - 1) : null;
             while (prev != null && prev.type == TokenType.NEWLINE) {
-                prev = i > 1 ? stmt.tokens.get(i - 2) : null;
+                prev = i > 1 ? tokens.get(i - 2) : null;
                 break;
             }
 
@@ -108,8 +112,8 @@ public class Formatter implements Node.Visitor {
 
             if (t.type == TokenType.LCURLY && tableDepth == 1) {
                 boolean emptyTable = false;
-                for (int j = i + 1; j < stmt.tokens.size(); j++) {
-                    Token nxt = stmt.tokens.get(j);
+                for (int j = i + 1; j < tokens.size(); j++) {
+                    Token nxt = tokens.get(j);
                     if (nxt.type != TokenType.NEWLINE && nxt.type != TokenType.COMMENT) {
                         emptyTable = (nxt.type == TokenType.RCURLY);
                         break;
@@ -413,7 +417,9 @@ public class Formatter implements Node.Visitor {
         for (Token tk : t.trailingTokens) wr(tk.raw);
     }
 
-    private void printTokens(java.util.List<Token> tokens) {
+    private void printTokens(java.util.List<Token> tokenList) {
+        java.util.List<Token> tokens = config.solveExpressions
+            ? ExpressionSolver.solve(tokenList) : tokenList;
         boolean afterValue = false;
         for (int i = 0; i < tokens.size(); i++) {
             Token t = tokens.get(i);
