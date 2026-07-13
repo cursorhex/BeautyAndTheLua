@@ -7,7 +7,7 @@ import java.util.Set;
 
 public class Lexer {
     private static final Set<String> KEYWORDS = new HashSet<>();
-    static {
+    static { // ik this sucks but im lazy
         String[] kws = {"and", "break", "continue", "do", "else", "elseif", "end",
             "false", "for", "function", "goto", "if", "in", "local", "nil",
             "not", "or", "repeat", "return", "then", "true", "until", "while",
@@ -413,7 +413,7 @@ public class Lexer {
         String word = raw.toString();
         if (KEYWORDS.contains(word)) {
             TokenType tt;
-            switch (word) {
+            switch (word) { // ._.
                 case "and": tt = TokenType.AND; break;
                 case "break": tt = TokenType.BREAK; break;
                 case "continue": tt = TokenType.CONTINUE; break;

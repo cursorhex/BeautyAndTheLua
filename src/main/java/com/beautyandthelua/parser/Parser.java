@@ -59,9 +59,19 @@ public class Parser {
 
     private void parseBlock(Node.Block block) {
         Node.Stmt stmt = new Node.Stmt();
+        int depth = 0;
 
         while (pos < tokens.size()) {
             Token t = peek();
+
+            if (t.type == TokenType.LPAREN || t.type == TokenType.LBRACK || t.type == TokenType.LCURLY) {
+                depth++;
+            }
+            if (t.type == TokenType.RPAREN || t.type == TokenType.RBRACK || t.type == TokenType.RCURLY) {
+                depth--;
+                if (depth < 0) depth = 0;
+            }
+
             if (t.type == TokenType.EOF) {
                 if (!stmt.tokens.isEmpty()) block.children.add(stmt);
                 advance();
@@ -70,14 +80,14 @@ public class Parser {
 
             if (t.type == TokenType.NEWLINE) {
                 advance();
-                if (!stmt.tokens.isEmpty()) {
+                if (depth == 0 && !stmt.tokens.isEmpty()) {
                     block.children.add(stmt);
                     stmt = new Node.Stmt();
                 }
                 continue;
             }
 
-            if (t.type == TokenType.SEMI) {
+            if (depth == 0 && t.type == TokenType.SEMI) {
                 advance();
                 if (!stmt.tokens.isEmpty()) {
                     block.children.add(stmt);
@@ -86,7 +96,7 @@ public class Parser {
                 continue;
             }
 
-            if (isBlockCloser(t)) {
+            if (depth == 0 && isBlockCloser(t)) {
                 if (!stmt.tokens.isEmpty()) block.children.add(stmt);
                 return;
             }
@@ -119,16 +129,45 @@ public class Parser {
                 continue;
             }
 
-            if (t.value.equals("function")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
+            if (t.value.equals("function") && stmt.tokens.isEmpty()) {
                 block.children.add(parseFuncStmt(false));
                 continue;
             }
 
-            if (t.value.equals("local") && peekAhead(1) != null && peekAhead(1).value.equals("function")) {
+            if (t.value.equals("local")) {
+                Token next = peekAhead(1);
+                if (next != null && next.value.equals("function")) {
+                    if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
+                    block.children.add(parseFuncStmt(true));
+                    continue;
+                }
+                if (!stmt.tokens.isEmpty()) {
+                    Token prev = stmt.tokens.get(stmt.tokens.size() - 1);
+                    if (prev.type == TokenType.IDENTIFIER || prev.type == TokenType.NUMBER ||
+                        prev.type == TokenType.STRING || prev.type == TokenType.NIL ||
+                        prev.type == TokenType.TRUE || prev.type == TokenType.FALSE ||
+                        prev.type == TokenType.VARARG || prev.type == TokenType.RPAREN ||
+                        prev.type == TokenType.RBRACK || prev.type == TokenType.RCURLY) {
+                        block.children.add(stmt);
+                        stmt = new Node.Stmt();
+                    }
+                }
+            }
+
+            if (t.value.equals("type")) {
                 if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
-                block.children.add(parseFuncStmt(true));
-                continue;
+            }
+
+            if (t.value.equals("export")) {
+                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
+            }
+
+            if (t.value.equals("import")) {
+                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
+            }
+
+            if (t.value.equals("typeof")) {
+                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
             }
 
             if (t.value.equals("do")) {
@@ -147,6 +186,28 @@ public class Parser {
                 if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
                 block.children.add(parseForStmt());
                 continue;
+            }
+
+            if (t.type == TokenType.IDENTIFIER && !stmt.tokens.isEmpty()) {
+                Token prev = stmt.tokens.get(stmt.tokens.size() - 1);
+                boolean prevIsValue = prev.type == TokenType.IDENTIFIER ||
+                    prev.type == TokenType.NUMBER || prev.type == TokenType.STRING ||
+                    prev.type == TokenType.NIL || prev.type == TokenType.TRUE ||
+                    prev.type == TokenType.FALSE || prev.type == TokenType.VARARG ||
+                    prev.type == TokenType.RPAREN || prev.type == TokenType.RBRACK ||
+                    prev.type == TokenType.RCURLY || prev.type == TokenType.END;
+                boolean prevIsKw = prev.type == TokenType.LOCAL || prev.type == TokenType.RETURN ||
+                    prev.type == TokenType.BREAK || prev.type == TokenType.GOTO ||
+                    prev.type == TokenType.IF || prev.type == TokenType.WHILE ||
+                    prev.type == TokenType.FOR || prev.type == TokenType.REPEAT ||
+                    prev.type == TokenType.DO || prev.type == TokenType.FUNCTION ||
+                    prev.type == TokenType.ELSE || prev.type == TokenType.ELSEIF ||
+                    prev.type == TokenType.THEN || prev.type == TokenType.AND ||
+                    prev.type == TokenType.OR || prev.type == TokenType.NOT;
+                if (prevIsValue && !prevIsKw) {
+                    block.children.add(stmt);
+                    stmt = new Node.Stmt();
+                }
             }
 
             stmt.tokens.add(advance());

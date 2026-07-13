@@ -15,5 +15,5 @@ public enum TokenType {
     PLUS, MINUS, STAR, SLASH, PERCENT, CARET, HASH,
     IDIV, AMPERSAND, PIPE, TILDE, SHL, SHR,
     EQ, NE, LE, GE, LT, GT, ASSIGN,
-    NEWLINE, EOF, ILLEGAL
+    NEWLINE, EOF, ILLEGAL // yea ur illegal >:(
 }

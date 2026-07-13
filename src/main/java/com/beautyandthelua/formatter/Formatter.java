@@ -5,8 +5,6 @@ import com.beautyandthelua.lexer.Token;
 import com.beautyandthelua.lexer.TokenType;
 import com.beautyandthelua.parser.Node;
 
-import java.util.Set;
-
 public class Formatter implements Node.Visitor {
     private final Config config;
     private final StringBuilder output;
@@ -63,10 +61,6 @@ public class Formatter implements Node.Visitor {
         };
     }
 
-    private boolean isUnaryOp(TokenType t) {
-        return t == TokenType.NOT || t == TokenType.HASH;
-    }
-
     @Override
     public void visit(Node.Block block) {
         for (int i = 0; i < block.children.size(); i++) {
@@ -81,8 +75,12 @@ public class Formatter implements Node.Visitor {
     @Override
     public void visit(Node.Stmt stmt) {
         boolean afterValue = false;
+        int tableDepth = 0;
+        boolean suppressNextSpace = false;
+
         for (int i = 0; i < stmt.tokens.size(); i++) {
             Token t = stmt.tokens.get(i);
+
             if (t.type == TokenType.NEWLINE) {
                 nl();
                 afterValue = false;
@@ -94,17 +92,79 @@ public class Formatter implements Node.Visitor {
                 afterValue = false;
                 continue;
             }
+
             Token prev = i > 0 ? stmt.tokens.get(i - 1) : null;
             while (prev != null && prev.type == TokenType.NEWLINE) {
                 prev = i > 1 ? stmt.tokens.get(i - 2) : null;
                 break;
             }
-            boolean needSp = needSpace(prev, t, afterValue);
-            if (needSp) {
-                output.append(' ');
+
+            if (t.type == TokenType.LCURLY) {
+                tableDepth++;
+            } else if (t.type == TokenType.RCURLY) {
+                if (tableDepth > 0) tableDepth--;
+            }
+
+            if (t.type == TokenType.LCURLY && tableDepth == 1) {
+            boolean needSp = !suppressNextSpace && needSpace(prev, t, afterValue);
+            suppressNextSpace = false;
+                if (needsIndent) {
+                    indent();
+                    needsIndent = false;
+                }
+                if (needSp) {
+                    output.append(' ');
+                }
+                output.append(t.raw);
+                indentLevel++;
+                nl();
+                afterValue = false;
+                continue;
+            }
+
+            if (t.type == TokenType.RCURLY && tableDepth == 0) {
+                if (indentLevel > 0) indentLevel--;
+                nl();
+                wr(t.raw);
+                afterValue = isValue(t);
+                continue;
+            }
+
+            if ((t.type == TokenType.COMMA || t.type == TokenType.SEMI) && tableDepth == 1) {
+                wr(t.raw);
+                nl();
+                afterValue = false;
+                suppressNextSpace = true;
+                continue;
+            }
+
+            if (tableDepth == 0 && isStmtKeyword(t)) {
+                boolean prevEndsStmt = prev != null && (
+                    prev.type == TokenType.IDENTIFIER || prev.type == TokenType.NUMBER ||
+                    prev.type == TokenType.STRING || prev.type == TokenType.NIL ||
+                    prev.type == TokenType.TRUE || prev.type == TokenType.FALSE ||
+                    prev.type == TokenType.VARARG || prev.type == TokenType.RPAREN ||
+                    prev.type == TokenType.RBRACK || prev.type == TokenType.RCURLY ||
+                    prev.type == TokenType.END || prev.type == TokenType.DO ||
+                    prev.type == TokenType.THEN || prev.type == TokenType.REPEAT);
+                if (prevEndsStmt && !(prev.type == TokenType.LOCAL && t.type == TokenType.FUNCTION)) {
+                    nl();
+                    wr(t.raw);
+                    afterValue = false;
+                    continue;
+                }
+            }
+
+            boolean needSp = !suppressNextSpace && needSpace(prev, t, afterValue);
+            suppressNextSpace = false;
+            if (needsIndent) {
+                indent();
                 needsIndent = false;
             }
-            wr(t.raw);
+            if (needSp) {
+                output.append(' ');
+            }
+            output.append(t.raw);
             if (t.type == TokenType.MINUS || t.type == TokenType.TILDE) {
             } else if (t.type == TokenType.NOT || t.type == TokenType.HASH) {
                 afterValue = false;
@@ -112,6 +172,15 @@ public class Formatter implements Node.Visitor {
                 afterValue = isValue(t);
             }
         }
+    }
+
+    private boolean isStmtKeyword(Token t) {
+        return switch (t.type) {
+            case LOCAL, FUNCTION, IF, WHILE, FOR, REPEAT, DO,
+                 RETURN, BREAK, GOTO, ELSEIF, ELSE, END, UNTIL,
+                 TYPE, EXPORT, IMPORT, TYPEOF -> true;
+            default -> false;
+        };
     }
 
     private boolean needSpace(Token prev, Token curr, boolean afterValue) {
@@ -137,15 +206,11 @@ public class Formatter implements Node.Visitor {
 
         if (curr.type == TokenType.LPAREN) {
             if (prev.type == TokenType.IDENTIFIER && !config.spaceBeforeFunctionParen) return false;
-            return false;
+            return isKeyword(prev);
         }
         if (curr.type == TokenType.LBRACK) return false;
 
-        if (curr.type == TokenType.MINUS || curr.type == TokenType.TILDE) {
-            return afterValue && config.spacesAroundOperators;
-        }
-
-        if (isUnaryOp(curr.type) && !isBinaryOp(curr.type)) return false;
+        if (isKeyword(prev)) return true;
 
         if (isBinaryOp(curr.type)) return config.spacesAroundOperators;
         if (isBinaryOp(prev.type)) {
@@ -155,9 +220,9 @@ public class Formatter implements Node.Visitor {
             return config.spacesAroundOperators;
         }
 
-        if (isUnaryOp(prev.type)) return false;
-
-        if (isKeyword(prev)) return true;
+        if (curr.type == TokenType.MINUS || curr.type == TokenType.TILDE) {
+            return afterValue && config.spacesAroundOperators;
+        }
 
         if (prev.type == TokenType.RPAREN || prev.type == TokenType.RBRACK ||
             prev.type == TokenType.RCURLY) {
@@ -170,6 +235,10 @@ public class Formatter implements Node.Visitor {
         }
 
         return false;
+    }
+
+    private boolean isUnaryOp(TokenType t) {
+        return t == TokenType.NOT || t == TokenType.HASH;
     }
 
     private boolean isLiteral(Token t) {
