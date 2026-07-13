@@ -77,6 +77,7 @@ public class Formatter implements Node.Visitor {
         boolean afterValue = false;
         int tableDepth = 0;
         boolean suppressNextSpace = false;
+        boolean suppressCloseBrace = false;
 
         for (int i = 0; i < stmt.tokens.size(); i++) {
             Token t = stmt.tokens.get(i);
@@ -106,8 +107,16 @@ public class Formatter implements Node.Visitor {
             }
 
             if (t.type == TokenType.LCURLY && tableDepth == 1) {
-            boolean needSp = !suppressNextSpace && needSpace(prev, t, afterValue);
-            suppressNextSpace = false;
+                boolean emptyTable = false;
+                for (int j = i + 1; j < stmt.tokens.size(); j++) {
+                    Token nxt = stmt.tokens.get(j);
+                    if (nxt.type != TokenType.NEWLINE && nxt.type != TokenType.COMMENT) {
+                        emptyTable = (nxt.type == TokenType.RCURLY);
+                        break;
+                    }
+                }
+                boolean needSp = !suppressNextSpace && needSpace(prev, t, afterValue);
+                suppressNextSpace = false;
                 if (needsIndent) {
                     indent();
                     needsIndent = false;
@@ -116,6 +125,12 @@ public class Formatter implements Node.Visitor {
                     output.append(' ');
                 }
                 output.append(t.raw);
+                if (emptyTable) {
+                    output.append('}');
+                    afterValue = true;
+                    suppressCloseBrace = true;
+                    continue;
+                }
                 indentLevel++;
                 nl();
                 afterValue = false;
@@ -123,10 +138,14 @@ public class Formatter implements Node.Visitor {
             }
 
             if (t.type == TokenType.RCURLY && tableDepth == 0) {
-                if (indentLevel > 0) indentLevel--;
-                nl();
-                wr(t.raw);
-                afterValue = isValue(t);
+                if (suppressCloseBrace) {
+                    suppressCloseBrace = false;
+                } else {
+                    if (indentLevel > 0) indentLevel--;
+                    nl();
+                    wr(t.raw);
+                    afterValue = isValue(t);
+                }
                 continue;
             }
 

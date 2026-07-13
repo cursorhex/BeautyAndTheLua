@@ -129,9 +129,20 @@ public class Parser {
                 continue;
             }
 
-            if (t.value.equals("function") && stmt.tokens.isEmpty()) {
-                block.children.add(parseFuncStmt(false));
-                continue;
+            if (t.value.equals("function")) {
+                if (!stmt.tokens.isEmpty()) {
+                    Token prev = stmt.tokens.get(stmt.tokens.size() - 1);
+                    if (prev.type == TokenType.ASSIGN) {
+                        Node.FuncStmt fs = parseFuncStmt(false, stmt.tokens);
+                        block.children.add(fs);
+                        stmt = new Node.Stmt();
+                        continue;
+                    }
+                }
+                if (stmt.tokens.isEmpty()) {
+                    block.children.add(parseFuncStmt(false));
+                    continue;
+                }
             }
 
             if (t.value.equals("local")) {
@@ -155,7 +166,9 @@ public class Parser {
             }
 
             if (t.value.equals("type")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
+                if (stmt.tokens.isEmpty()) {
+                    block.children.add(stmt); stmt = new Node.Stmt();
+                }
             }
 
             if (t.value.equals("export")) {
@@ -283,16 +296,27 @@ public class Parser {
     }
 
     private Node.FuncStmt parseFuncStmt(boolean isLocal) {
+        return parseFuncStmt(isLocal, null);
+    }
+
+    private Node.FuncStmt parseFuncStmt(boolean isLocal, List<Token> prefix) {
         Node.FuncStmt node = new Node.FuncStmt();
         node.isLocal = isLocal;
-        if (isLocal) {
+        if (prefix != null) {
+            node.header.addAll(prefix);
+        }
+        if (isLocal && prefix == null) {
             node.header.add(advance());
         }
+        int parenDepth = 0;
+        boolean seenParen = false;
         while (pos < tokens.size()) {
             Token t = advance();
             node.header.add(t);
+            if (t.type == TokenType.LPAREN) { parenDepth++; seenParen = true; }
+            if (t.type == TokenType.RPAREN) parenDepth--;
+            if (seenParen && parenDepth == 0) break;
             if (t.value.equals("end")) return node;
-            if (t.type == TokenType.NEWLINE) break;
         }
         parseBlock(node.body);
         if (pos < tokens.size() && peek().value.equals("end")) {
