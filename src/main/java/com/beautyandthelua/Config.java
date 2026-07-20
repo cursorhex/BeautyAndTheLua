@@ -31,4 +31,5 @@ public class Config {
     public Config useTabs(boolean t) { this.useTabs = t; return this; }
     public Config maxLineLength(int m) { this.maxLineLength = m; return this; }
     public Config spacesAroundOperators(boolean s) { this.spacesAroundOperators = s; return this; }
+    public Config solveExpressions(boolean s) { this.solveExpressions = s; return this; }
 }

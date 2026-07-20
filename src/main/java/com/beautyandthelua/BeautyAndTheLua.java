@@ -58,7 +58,8 @@ public class BeautyAndTheLua {
         System.out.println("  -o, --output <file>     Output file (default: stdout)");
         System.out.println("      --stdin             Read from stdin");
         System.out.println("  -r, --recursive         Process directories recursively");
-        System.out.println("  -e, --solve-expressions  Simplify constant arithmetic expressions");
+        System.out.println("  -e, --solve-expressions  Simplify constant arithmetic expressions (on by default)");
+        System.out.println("      --no-solve-expressions  Disable constant folding and propagation");
         System.out.println("  -v, --version           Show version");
         System.out.println("  -h, --help              Show this help");
     }
@@ -92,6 +93,9 @@ public class BeautyAndTheLua {
                     break;
                 case "-e": case "--solve-expressions":
                     config.solveExpressions = true;
+                    break;
+                case "--no-solve-expressions":
+                    config.solveExpressions = false;
                     break;
                 case "-o": case "--output":
                     outputFile = args[++i];

@@ -8,7 +8,7 @@ A universal Lua/Luau code beautifier. Supports Lua 5.1, 5.2, 5.3, 5.4, Luau (Rob
 - Idempotent: running the beautifier twice produces the same output
 - Comment-preserving: shebangs, single-line and multi-line comments are kept intact
 - Configurable: indent width, tabs vs spaces, spacing around operators, and more
-- Constant folding: optionally simplifies constant arithmetic (`-e`)
+- Constant folding: simplifies constant arithmetic and propagates constant locals (on by default)
 - Check mode: verify formatting without modifying files (`--check`)
 - Recursive: process entire directory trees (`--recursive`)
 - No dependencies: zero external libraries
@@ -26,7 +26,8 @@ BeautyAndTheLua [options] <file|directory>
 | `-t, --tabs` | Use tabs for indentation |
 | `-w, --width <n>` | Max line length (default: 120) |
 | `-c, --check` | Check formatting without modifying files |
-| `-e, --solve-expressions` | Fold constant arithmetic and propagate constant locals |
+| `-e, --solve-expressions` | Fold constant arithmetic and propagate constant locals (on by default) |
+| `--no-solve-expressions` | Disable constant folding and propagation |
 | `-o, --output <file>` | Write to file instead of in-place |
 | `--stdin` | Read source from stdin |
 | `-r, --recursive` | Process directories recursively |
@@ -50,6 +51,9 @@ java -jar BeautyAndTheLua.jar --indent 2 script.lua
 
 # Fold constant expressions while formatting
 java -jar BeautyAndTheLua.jar -e script.lua
+
+# Format without folding constant expressions
+java -jar BeautyAndTheLua.jar --no-solve-expressions script.lua
 
 # Read from stdin, write to stdout
 cat script.lua | java -jar BeautyAndTheLua.jar --stdin > formatted.lua
@@ -105,9 +109,11 @@ With `-e` enabled:
 | `local z = 2 ^ 3 ^ 2` | `local z = 512` |
 | `local x = 5; local y = x + 3` | `local y = 8` |
 
-## Constant folding and propagation (`-e`)
+## Constant folding and propagation
 
-The `-e` flag turns on two passes that run before formatting:
+Constant folding and propagation run by default. Pass `--no-solve-expressions`
+to turn them off, or `-e` to state the intent explicitly. Two passes run before
+formatting:
 
 - **ExpressionSolver** folds constant sub-expressions. It parses each expression
   respecting Lua operator precedence and associativity, so `2 + 3 * 4` becomes `14`
