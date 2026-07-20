@@ -12,6 +12,7 @@ public class Formatter implements Node.Visitor {
     private final StringBuilder output;
     private int indentLevel;
     private boolean needsIndent;
+    private ConstantPropagator propagator;
 
     public Formatter(Config config) {
         this.config = config;
@@ -21,6 +22,9 @@ public class Formatter implements Node.Visitor {
     }
 
     public String format(Node root) {
+        if (config.solveExpressions && root instanceof Node.Block block) {
+            propagator = ConstantPropagator.analyze(block);
+        }
         root.accept(this);
         if (config.insertFinalNewline && output.length() > 0 && output.charAt(output.length() - 1) != '\n') {
             output.append('\n');
@@ -76,8 +80,10 @@ public class Formatter implements Node.Visitor {
 
     @Override
     public void visit(Node.Stmt stmt) {
+        List<Token> raw = config.solveExpressions && propagator != null
+            ? propagator.substitute(stmt.tokens) : stmt.tokens;
         List<Token> tokens = config.solveExpressions
-            ? ExpressionSolver.solve(stmt.tokens) : stmt.tokens;
+            ? ExpressionSolver.solve(raw) : raw;
         boolean afterValue = false;
         int tableDepth = 0;
         boolean suppressNextSpace = false;
@@ -418,8 +424,10 @@ public class Formatter implements Node.Visitor {
     }
 
     private void printTokens(java.util.List<Token> tokenList) {
+        java.util.List<Token> propagated = config.solveExpressions && propagator != null
+            ? propagator.substitute(tokenList) : tokenList;
         java.util.List<Token> tokens = config.solveExpressions
-            ? ExpressionSolver.solve(tokenList) : tokenList;
+            ? ExpressionSolver.solve(propagated) : propagated;
         boolean afterValue = false;
         for (int i = 0; i < tokens.size(); i++) {
             Token t = tokens.get(i);

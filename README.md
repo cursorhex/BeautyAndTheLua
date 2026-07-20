@@ -4,14 +4,15 @@ A universal Lua/Luau code beautifier. Supports Lua 5.1, 5.2, 5.3, 5.4, Luau (Rob
 
 ## Features
 
-- **Multi-dialect** — works with Lua 5.1 through 5.4, Luau, and Roblox Lua
-- **Idempotent** — running the beautifier twice produces the same output
-- **Comment-preserving** — shebangs, single-line and multi-line comments are kept intact
-- **Configurable** — indent width, tabs vs spaces, spacing around operators, and more
-- **Check mode** — verify formatting without modifying files (`--check`)
-- **Recursive** — process entire directory trees (`--recursive`)
-- **No dependencies** — pure Java, zero external libraries
-- **CLI + library** — use from the command line or embed in your own tools
+- Multi-dialect: works with Lua 5.1 through 5.4, Luau, and Roblox Lua
+- Idempotent: running the beautifier twice produces the same output
+- Comment-preserving: shebangs, single-line and multi-line comments are kept intact
+- Configurable: indent width, tabs vs spaces, spacing around operators, and more
+- Constant folding: optionally simplifies constant arithmetic (`-e`)
+- Check mode: verify formatting without modifying files (`--check`)
+- Recursive: process entire directory trees (`--recursive`)
+- No dependencies: zero external libraries
+- CLI and library: use from the command line or embed in your own tools
 
 ## Usage
 
@@ -25,6 +26,7 @@ BeautyAndTheLua [options] <file|directory>
 | `-t, --tabs` | Use tabs for indentation |
 | `-w, --width <n>` | Max line length (default: 120) |
 | `-c, --check` | Check formatting without modifying files |
+| `-e, --solve-expressions` | Fold constant arithmetic and propagate constant locals |
 | `-o, --output <file>` | Write to file instead of in-place |
 | `--stdin` | Read source from stdin |
 | `-r, --recursive` | Process directories recursively |
@@ -45,6 +47,9 @@ java -jar BeautyAndTheLua.jar --recursive src/
 
 # Use 2-space indentation
 java -jar BeautyAndTheLua.jar --indent 2 script.lua
+
+# Fold constant expressions while formatting
+java -jar BeautyAndTheLua.jar -e script.lua
 
 # Read from stdin, write to stdout
 cat script.lua | java -jar BeautyAndTheLua.jar --stdin > formatted.lua
@@ -92,9 +97,34 @@ boolean isFormatted = beautifier.check(source, "script.lua");
 | `x=-1` | `x = -1` |
 | `x=n-1` | `x = n - 1` |
 
+With `-e` enabled:
+
+| Before | After |
+|--------|-------|
+| `local y = 2 + 3 * 4` | `local y = 14` |
+| `local z = 2 ^ 3 ^ 2` | `local z = 512` |
+| `local x = 5; local y = x + 3` | `local y = 8` |
+
+## Constant folding and propagation (`-e`)
+
+The `-e` flag turns on two passes that run before formatting:
+
+- **ExpressionSolver** folds constant sub-expressions. It parses each expression
+  respecting Lua operator precedence and associativity, so `2 + 3 * 4` becomes `14`
+  and `2 ^ 3 ^ 2` becomes `512`. A result is only substituted when it is an exact
+  integer or a boolean, so folding never changes program behavior. Hex floats and
+  anything non-constant are left untouched.
+- **ConstantPropagator** replaces references to constant locals with their values.
+  A local is propagated only when it is effectively final: declared once as
+  `local n = <literal>` and never reassigned in the region where it is visible.
+  Scopes are tracked properly, so a `local` inside a nested block or function
+  never leaks into the enclosing scope.
+
+Both passes are conservative by design: when in doubt, they leave the code as-is.
+
 ## Supported Syntax
 
-- All Lua 5.1–5.4 keywords and operators (`::`, `//`, `<<`, `>>`, `&`, `|`, `~`)
+- All Lua 5.1 to 5.4 keywords and operators (`::`, `//`, `<<`, `>>`, `&`, `|`, `~`)
 - Luau extensions (`continue`, `type`, `export type`, `typeof`)
 - Long strings and comments (`[[...]]`, `[=[...]=]`)
 - Shebang lines (`#!/usr/bin/env lua`)
