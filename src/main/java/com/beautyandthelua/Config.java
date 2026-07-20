@@ -18,6 +18,8 @@ public class Config {
     public boolean preserveBlankLines = true;
     public int maxBlankLines = 2;
     public boolean keepInlineComments = true;
+    public boolean decodeStringEscapes = true;
+    public boolean encodeStringEscapes = false;
     public boolean removeTrailingWhitespace = true;
     public boolean tableNewlineAfterLBrace = true;
     public boolean tableNewlineBeforeRBrace = true;
@@ -25,6 +27,7 @@ public class Config {
     public int singleLineTableMaxFields = 4;
     public boolean insertFinalNewline = true;
     public boolean solveExpressions = true;
+    public boolean eliminateDeadCode = true;
 
     public Config() {}
 
@@ -36,4 +39,7 @@ public class Config {
     public Config preserveBlankLines(boolean p) { this.preserveBlankLines = p; return this; }
     public Config maxBlankLines(int m) { this.maxBlankLines = m; return this; }
     public Config keepInlineComments(boolean k) { this.keepInlineComments = k; return this; }
+    public Config decodeStringEscapes(boolean d) { this.decodeStringEscapes = d; return this; }
+    public Config encodeStringEscapes(boolean e) { this.encodeStringEscapes = e; return this; }
+    public Config eliminateDeadCode(boolean e) { this.eliminateDeadCode = e; return this; }
 }

@@ -28,6 +28,12 @@ public class BeautyAndTheLua {
     public String beautify(String source, String filename) {
         Lexer lexer = new Lexer(source, filename);
         List<Token> tokens = lexer.tokenize();
+        if (config.decodeStringEscapes) {
+            tokens = com.beautyandthelua.formatter.StringTransformer.decode(tokens);
+        }
+        if (config.encodeStringEscapes) {
+            tokens = com.beautyandthelua.formatter.StringTransformer.encode(tokens);
+        }
         Parser parser = new Parser(tokens);
         Node.Block ast = parser.parse();
         Formatter formatter = new Formatter(config);
@@ -60,6 +66,9 @@ public class BeautyAndTheLua {
         System.out.println("  -r, --recursive         Process directories recursively");
         System.out.println("  -e, --solve-expressions  Simplify constant arithmetic expressions (on by default)");
         System.out.println("      --no-solve-expressions  Disable constant folding and propagation");
+        System.out.println("  -d, --decode-strings    Decode string escapes to readable characters");
+        System.out.println("  -E, --encode-strings    Encode strings as \\ddd decimal escapes");
+        System.out.println("      --no-dead-code      Disable dead code elimination");
         System.out.println("  -v, --version           Show version");
         System.out.println("  -h, --help              Show this help");
     }
@@ -96,6 +105,15 @@ public class BeautyAndTheLua {
                     break;
                 case "--no-solve-expressions":
                     config.solveExpressions = false;
+                    break;
+                case "-d": case "--decode-strings":
+                    config.decodeStringEscapes = true;
+                    break;
+                case "-E": case "--encode-strings":
+                    config.encodeStringEscapes = true;
+                    break;
+                case "--no-dead-code":
+                    config.eliminateDeadCode = false;
                     break;
                 case "-o": case "--output":
                     outputFile = args[++i];

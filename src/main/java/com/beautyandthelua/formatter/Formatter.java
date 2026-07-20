@@ -24,6 +24,9 @@ public class Formatter implements Node.Visitor {
     public String format(Node root) {
         if (config.solveExpressions && root instanceof Node.Block block) {
             propagator = ConstantPropagator.analyze(block);
+            if (config.eliminateDeadCode) {
+                new DeadCodeEliminator(propagator).run(block);
+            }
         }
         root.accept(this);
         if (config.insertFinalNewline && output.length() > 0 && output.charAt(output.length() - 1) != '\n') {
@@ -262,6 +265,12 @@ public class Formatter implements Node.Visitor {
 
         if (curr.type == TokenType.LPAREN) {
             if (prev.type == TokenType.IDENTIFIER && !config.spaceBeforeFunctionParen) return false;
+            if (isBinaryOp(prev.type)) {
+                if (prev.type == TokenType.MINUS || prev.type == TokenType.TILDE) {
+                    return afterValue && config.spacesAroundOperators;
+                }
+                return config.spacesAroundOperators;
+            }
             return isKeyword(prev);
         }
         if (curr.type == TokenType.LBRACK) return false;

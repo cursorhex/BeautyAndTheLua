@@ -10,6 +10,8 @@ A universal Lua/Luau code beautifier. Supports Lua 5.1, 5.2, 5.3, 5.4, Luau (Rob
 - Blank-line aware: keeps intentional blank lines between statements, capped at a configurable maximum
 - Configurable: indent width, tabs vs spaces, spacing around operators, and more
 - Constant folding: simplifies constant arithmetic and propagates constant locals (on by default)
+- Dead code elimination: removes branches whose conditions fold to a constant (on by default)
+- String escapes: decode `\ddd` escapes to readable text or re-encode them
 - Check mode: verify formatting without modifying files (`--check`)
 - Recursive: process entire directory trees (`--recursive`)
 - No dependencies: zero external libraries
@@ -29,6 +31,9 @@ BeautyAndTheLua [options] <file|directory>
 | `-c, --check` | Check formatting without modifying files |
 | `-e, --solve-expressions` | Fold constant arithmetic and propagate constant locals (on by default) |
 | `--no-solve-expressions` | Disable constant folding and propagation |
+| `-d, --decode-strings` | Decode string escapes to readable characters |
+| `-E, --encode-strings` | Encode strings as `\ddd` decimal escapes |
+| `--no-dead-code` | Disable dead code elimination |
 | `-o, --output <file>` | Write to file instead of in-place |
 | `--stdin` | Read source from stdin |
 | `-r, --recursive` | Process directories recursively |
@@ -55,6 +60,12 @@ java -jar BeautyAndTheLua.jar -e script.lua
 
 # Format without folding constant expressions
 java -jar BeautyAndTheLua.jar --no-solve-expressions script.lua
+
+# Decode escaped strings into readable text
+java -jar BeautyAndTheLua.jar -d script.lua
+
+# Encode strings as decimal escapes
+java -jar BeautyAndTheLua.jar -E script.lua
 
 # Read from stdin, write to stdout
 cat script.lua | java -jar BeautyAndTheLua.jar --stdin > formatted.lua
@@ -141,6 +152,36 @@ Layout-level cleanup is always on and is controlled by the `Config` object:
   headers, such as `function f() -- ...`, `if cond then -- ...`, and
   `for i = 1, n do -- ...`. Set `keepInlineComments` to `false` to push every
   comment onto its own line.
+
+## Dead code elimination
+
+After constant folding, branch conditions that reduce to a constant are resolved
+and unreachable code is dropped. Runs by default; pass `--no-dead-code` to keep
+every branch.
+
+- `if false then ... end` is removed entirely.
+- `if true then X end` becomes `do X end`, preserving the scope of any locals.
+- Dead `elseif` clauses are dropped, and the first clause that is always taken
+  turns the rest of the chain into a plain block.
+- `while false do ... end` is removed.
+
+Conditions are only resolved when they fold to a single literal, so anything
+depending on runtime values is left untouched.
+
+## String escapes
+
+Two optional, opposite transforms rewrite short-string literals before parsing:
+
+- **Decode** (`-d` / `decodeStringEscapes`): turns escape sequences back into
+  readable characters where it is safe. `"\056\051\052"` becomes `"834"`.
+  Control characters, quotes and backslashes stay escaped; bytes outside
+  printable ASCII are kept as `\ddd`.
+- **Encode** (`-E` / `encodeStringEscapes`): renders every byte as a `\ddd`
+  decimal escape, the form many obfuscators emit. `"Hi"` becomes `"\72\105"`.
+
+Both decode the literal to its raw bytes first, so each direction is idempotent
+and the two can be chained. Long strings (`[[...]]`) and literals containing an
+unsupported escape (unicode or `\z`) are left untouched.
 
 ## Supported Syntax
 
