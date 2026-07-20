@@ -60,6 +60,9 @@ public class Parser {
     private void parseBlock(Node.Block block) {
         Node.Stmt stmt = new Node.Stmt();
         int depth = 0;
+        int pendingBlank = 0;
+        boolean seenContent = false;
+        boolean justAddedNode = false;
 
         while (pos < tokens.size()) {
             Token t = peek();
@@ -73,16 +76,26 @@ public class Parser {
             }
 
             if (t.type == TokenType.EOF) {
-                if (!stmt.tokens.isEmpty()) block.children.add(stmt);
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; block.children.add(stmt); }
                 advance();
                 return;
             }
 
             if (t.type == TokenType.NEWLINE) {
                 advance();
-                if (depth == 0 && !stmt.tokens.isEmpty()) {
-                    block.children.add(stmt);
-                    stmt = new Node.Stmt();
+                if (depth == 0) {
+                    if (!stmt.tokens.isEmpty()) {
+                        stmt.blankBefore = pendingBlank;
+                        pendingBlank = 0;
+                        block.children.add(stmt);
+                        stmt = new Node.Stmt();
+                        seenContent = true;
+                        justAddedNode = false;
+                    } else if (justAddedNode) {
+                        justAddedNode = false; // this newline terminates the node just added
+                    } else if (seenContent) {
+                        pendingBlank++;
+                    }
                 }
                 continue;
             }
@@ -90,14 +103,18 @@ public class Parser {
             if (depth == 0 && t.type == TokenType.SEMI) {
                 advance();
                 if (!stmt.tokens.isEmpty()) {
+                    stmt.blankBefore = pendingBlank;
+                    pendingBlank = 0;
                     block.children.add(stmt);
                     stmt = new Node.Stmt();
+                    seenContent = true;
+                    justAddedNode = true;
                 }
                 continue;
             }
 
             if (depth == 0 && isBlockCloser(t)) {
-                if (!stmt.tokens.isEmpty()) block.children.add(stmt);
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; block.children.add(stmt); }
                 return;
             }
 
@@ -106,7 +123,12 @@ public class Parser {
                 if (!stmt.tokens.isEmpty()) {
                     stmt.tokens.add(t);
                 } else {
-                    block.children.add(new Node.Comment(t));
+                    Node.Comment cm = new Node.Comment(t);
+                    cm.blankBefore = pendingBlank;
+                    pendingBlank = 0;
+                    block.children.add(cm);
+                    seenContent = true;
+                    justAddedNode = true;
                 }
                 continue;
             }
@@ -114,18 +136,30 @@ public class Parser {
             if (t.type == TokenType.SHEBANG) {
                 advance();
                 block.children.add(new Node.Comment(t));
+                seenContent = true;
+                justAddedNode = true;
                 continue;
             }
 
             if (t.value.equals("if")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
-                block.children.add(parseIfStmt());
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
+                int b = pendingBlank; pendingBlank = 0;
+                Node.IfStmt n = parseIfStmt();
+                n.blankBefore = b;
+                block.children.add(n);
+                seenContent = true;
+                justAddedNode = true;
                 continue;
             }
 
             if (t.value.equals("repeat")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
-                block.children.add(parseRepeatStmt());
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
+                int b = pendingBlank; pendingBlank = 0;
+                Node.RepeatStmt n = parseRepeatStmt();
+                n.blankBefore = b;
+                block.children.add(n);
+                seenContent = true;
+                justAddedNode = true;
                 continue;
             }
 
@@ -133,14 +167,23 @@ public class Parser {
                 if (!stmt.tokens.isEmpty()) {
                     Token prev = stmt.tokens.get(stmt.tokens.size() - 1);
                     if (prev.type == TokenType.ASSIGN) {
+                        int b = pendingBlank; pendingBlank = 0;
                         Node.FuncStmt fs = parseFuncStmt(false, stmt.tokens);
+                        fs.blankBefore = b;
                         block.children.add(fs);
                         stmt = new Node.Stmt();
+                        seenContent = true;
+                        justAddedNode = true;
                         continue;
                     }
                 }
                 if (stmt.tokens.isEmpty()) {
-                    block.children.add(parseFuncStmt(false));
+                    int b = pendingBlank; pendingBlank = 0;
+                    Node.FuncStmt fs = parseFuncStmt(false);
+                    fs.blankBefore = b;
+                    block.children.add(fs);
+                    seenContent = true;
+                    justAddedNode = true;
                     continue;
                 }
             }
@@ -148,8 +191,13 @@ public class Parser {
             if (t.value.equals("local")) {
                 Token next = peekAhead(1);
                 if (next != null && next.value.equals("function")) {
-                    if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
-                    block.children.add(parseFuncStmt(true));
+                    if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
+                    int b = pendingBlank; pendingBlank = 0;
+                    Node.FuncStmt fs = parseFuncStmt(true);
+                    fs.blankBefore = b;
+                    block.children.add(fs);
+                    seenContent = true;
+                    justAddedNode = true;
                     continue;
                 }
                 if (!stmt.tokens.isEmpty()) {
@@ -159,45 +207,57 @@ public class Parser {
                         prev.type == TokenType.TRUE || prev.type == TokenType.FALSE ||
                         prev.type == TokenType.VARARG || prev.type == TokenType.RPAREN ||
                         prev.type == TokenType.RBRACK || prev.type == TokenType.RCURLY) {
+                        stmt.blankBefore = pendingBlank;
+                        pendingBlank = 0;
                         block.children.add(stmt);
                         stmt = new Node.Stmt();
+                        seenContent = true;
                     }
                 }
             }
 
-            if (t.value.equals("type")) {
-                if (stmt.tokens.isEmpty()) {
-                    block.children.add(stmt); stmt = new Node.Stmt();
-                }
-            }
-
             if (t.value.equals("export")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
             }
 
             if (t.value.equals("import")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
             }
 
             if (t.value.equals("typeof")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
             }
 
             if (t.value.equals("do")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
-                block.children.add(parseDoStmt());
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
+                int b = pendingBlank; pendingBlank = 0;
+                Node.DoStmt n = parseDoStmt();
+                n.blankBefore = b;
+                block.children.add(n);
+                seenContent = true;
+                justAddedNode = true;
                 continue;
             }
 
             if (t.value.equals("while")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
-                block.children.add(parseWhileStmt());
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
+                int b = pendingBlank; pendingBlank = 0;
+                Node.WhileStmt n = parseWhileStmt();
+                n.blankBefore = b;
+                block.children.add(n);
+                seenContent = true;
+                justAddedNode = true;
                 continue;
             }
 
             if (t.value.equals("for")) {
-                if (!stmt.tokens.isEmpty()) { block.children.add(stmt); stmt = new Node.Stmt(); }
-                block.children.add(parseForStmt());
+                if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; pendingBlank = 0; block.children.add(stmt); stmt = new Node.Stmt(); }
+                int b = pendingBlank; pendingBlank = 0;
+                Node.ForStmt n = parseForStmt();
+                n.blankBefore = b;
+                block.children.add(n);
+                seenContent = true;
+                justAddedNode = true;
                 continue;
             }
 
@@ -218,20 +278,34 @@ public class Parser {
                     prev.type == TokenType.THEN || prev.type == TokenType.AND ||
                     prev.type == TokenType.OR || prev.type == TokenType.NOT;
                 if (prevIsValue && !prevIsKw) {
+                    stmt.blankBefore = pendingBlank;
+                    pendingBlank = 0;
                     block.children.add(stmt);
                     stmt = new Node.Stmt();
+                    seenContent = true;
                 }
             }
 
             stmt.tokens.add(advance());
+            seenContent = true;
+            justAddedNode = false;
         }
 
-        if (!stmt.tokens.isEmpty()) block.children.add(stmt);
+        if (!stmt.tokens.isEmpty()) { stmt.blankBefore = pendingBlank; block.children.add(stmt); }
     }
 
     private Token peekAhead(int n) {
         int idx = pos + n;
         return idx < tokens.size() ? tokens.get(idx) : null;
+    }
+
+    private void attachTrailingComment(List<Token> header) {
+        if (header.isEmpty()) return;
+        Token last = header.get(header.size() - 1);
+        if (pos < tokens.size() && peek().type == TokenType.COMMENT
+            && peek().line == last.line) {
+            header.add(advance());
+        }
     }
 
     private void skipNewlines() {
@@ -249,6 +323,7 @@ public class Parser {
             if (t.type == TokenType.EOF) throw new RuntimeException("unexpected EOF in if");
         }
 
+        attachTrailingComment(clause.header);
         parseBlock(clause.body);
         node.clauses.add(clause);
 
@@ -261,6 +336,7 @@ public class Parser {
                     ec.header.add(ct);
                     if (ct.value.equals("then")) break;
                 }
+                attachTrailingComment(ec.header);
                 parseBlock(ec.body);
                 node.clauses.add(ec);
             } else if (t.value.equals("else")) {
@@ -318,6 +394,7 @@ public class Parser {
             if (seenParen && parenDepth == 0) break;
             if (t.value.equals("end")) return node;
         }
+        attachTrailingComment(node.header);
         parseBlock(node.body);
         if (pos < tokens.size() && peek().value.equals("end")) {
             advance();
@@ -329,6 +406,7 @@ public class Parser {
     private Node.DoStmt parseDoStmt() {
         Node.DoStmt node = new Node.DoStmt();
         node.header.add(advance());
+        attachTrailingComment(node.header);
         parseBlock(node.body);
         if (pos < tokens.size() && peek().value.equals("end")) {
             advance();
@@ -345,6 +423,7 @@ public class Parser {
             if (t.value.equals("do")) break;
             if (t.type == TokenType.NEWLINE || t.type == TokenType.EOF) break;
         }
+        attachTrailingComment(node.header);
         parseBlock(node.body);
         if (pos < tokens.size() && peek().value.equals("end")) {
             advance();
@@ -361,6 +440,7 @@ public class Parser {
             if (t.value.equals("do")) break;
             if (t.type == TokenType.NEWLINE || t.type == TokenType.EOF) break;
         }
+        attachTrailingComment(node.header);
         parseBlock(node.body);
         if (pos < tokens.size() && peek().value.equals("end")) {
             advance();

@@ -67,14 +67,33 @@ public class Formatter implements Node.Visitor {
         };
     }
 
+    private Token prevMeaningful(List<Token> tokens, int i) {
+        for (int j = i - 1; j >= 0; j--) {
+            TokenType tt = tokens.get(j).type;
+            if (tt != TokenType.NEWLINE && tt != TokenType.COMMENT) return tokens.get(j);
+        }
+        return null;
+    }
+
     @Override
     public void visit(Node.Block block) {
+        boolean first = true;
         for (int i = 0; i < block.children.size(); i++) {
             Node child = block.children.get(i);
-            if (i > 0 && !(child instanceof Node.Comment)) {
+            if (child instanceof Node.Stmt s && s.tokens.isEmpty()) {
+                continue;
+            }
+            if (!first) {
                 nl();
+                if (config.preserveBlankLines && child.blankBefore > 0) {
+                    int blanks = Math.min(child.blankBefore, config.maxBlankLines);
+                    for (int b = 0; b < blanks; b++) {
+                        nl();
+                    }
+                }
             }
             child.accept(this);
+            first = false;
         }
     }
 
@@ -98,8 +117,16 @@ public class Formatter implements Node.Visitor {
                 continue;
             }
             if (t.type == TokenType.COMMENT) {
-                if (!needsIndent) nl();
-                wr(t.raw);
+                Token before = prevMeaningful(tokens, i);
+                boolean inline = config.keepInlineComments && before != null
+                    && !needsIndent && t.line == before.line;
+                if (inline) {
+                    output.append(' ');
+                    output.append(t.raw);
+                } else {
+                    if (!needsIndent) nl();
+                    wr(t.raw);
+                }
                 afterValue = false;
                 continue;
             }
@@ -299,12 +326,11 @@ public class Formatter implements Node.Visitor {
     public void visit(Node.Comment comment) {
         Token t = comment.token;
         if (t.type == TokenType.SHEBANG) {
-            wr(t.raw); nl();
+            wr(t.raw);
             return;
         }
         if (!needsIndent) nl();
         wr(t.raw);
-        nl();
     }
 
     @Override
@@ -432,6 +458,12 @@ public class Formatter implements Node.Visitor {
         for (int i = 0; i < tokens.size(); i++) {
             Token t = tokens.get(i);
             if (t.type == TokenType.NEWLINE) { nl(); afterValue = false; continue; }
+            if (t.type == TokenType.COMMENT) {
+                if (!needsIndent) output.append(' ');
+                wr(t.raw);
+                afterValue = false;
+                continue;
+            }
             Token prev = i > 0 ? tokens.get(i - 1) : null;
             while (prev != null && prev.type == TokenType.NEWLINE) {
                 prev = null;

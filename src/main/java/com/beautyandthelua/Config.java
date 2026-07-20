@@ -17,6 +17,7 @@ public class Config {
     public boolean alignConsecutiveTableFields = false;
     public boolean preserveBlankLines = true;
     public int maxBlankLines = 2;
+    public boolean keepInlineComments = true;
     public boolean removeTrailingWhitespace = true;
     public boolean tableNewlineAfterLBrace = true;
     public boolean tableNewlineBeforeRBrace = true;
@@ -32,4 +33,7 @@ public class Config {
     public Config maxLineLength(int m) { this.maxLineLength = m; return this; }
     public Config spacesAroundOperators(boolean s) { this.spacesAroundOperators = s; return this; }
     public Config solveExpressions(boolean s) { this.solveExpressions = s; return this; }
+    public Config preserveBlankLines(boolean p) { this.preserveBlankLines = p; return this; }
+    public Config maxBlankLines(int m) { this.maxBlankLines = m; return this; }
+    public Config keepInlineComments(boolean k) { this.keepInlineComments = k; return this; }
 }

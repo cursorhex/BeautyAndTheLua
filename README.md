@@ -6,7 +6,8 @@ A universal Lua/Luau code beautifier. Supports Lua 5.1, 5.2, 5.3, 5.4, Luau (Rob
 
 - Multi-dialect: works with Lua 5.1 through 5.4, Luau, and Roblox Lua
 - Idempotent: running the beautifier twice produces the same output
-- Comment-preserving: shebangs, single-line and multi-line comments are kept intact
+- Comment-preserving: shebangs, single-line and multi-line comments are kept intact, including inline trailing comments
+- Blank-line aware: keeps intentional blank lines between statements, capped at a configurable maximum
 - Configurable: indent width, tabs vs spaces, spacing around operators, and more
 - Constant folding: simplifies constant arithmetic and propagates constant locals (on by default)
 - Check mode: verify formatting without modifying files (`--check`)
@@ -127,6 +128,19 @@ formatting:
   never leaks into the enclosing scope.
 
 Both passes are conservative by design: when in doubt, they leave the code as-is.
+
+## Whitespace and comments
+
+Layout-level cleanup is always on and is controlled by the `Config` object:
+
+- **Blank lines**: runs of blank lines between statements are preserved but capped
+  at `maxBlankLines` (default 2). Leading and trailing blank lines inside a block
+  are removed. Set `preserveBlankLines` to `false` to collapse all blank lines.
+- **Inline comments**: a comment that sits on the same source line as the code
+  before it stays on that line (`local x = 1 -- note`). This also applies to block
+  headers, such as `function f() -- ...`, `if cond then -- ...`, and
+  `for i = 1, n do -- ...`. Set `keepInlineComments` to `false` to push every
+  comment onto its own line.
 
 ## Supported Syntax
 

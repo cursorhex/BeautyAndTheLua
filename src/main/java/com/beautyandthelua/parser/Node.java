@@ -6,6 +6,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public abstract class Node {
+    /** Number of blank lines that appeared before this node in the source. */
+    public int blankBefore;
+
     public abstract void accept(Visitor visitor);
 
     public interface Visitor {
