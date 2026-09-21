@@ -16,6 +16,24 @@ public class StringTransformer {
         return apply(tokens, true);
     }
 
+    public static List<Token> normalize(List<Token> tokens) {
+        List<Token> out = new ArrayList<>(tokens.size());
+        for (Token t : tokens) {
+            if (t.type == TokenType.STRING && isShortString(t.raw)
+                && t.raw.indexOf('\\') < 0) {
+                String body = t.raw.substring(1, t.raw.length() - 1);
+                char pick = (body.indexOf('"') >= 0 && body.indexOf('\'') < 0) ? '\'' : '"';
+                if (pick != t.raw.charAt(0)) {
+                    String raw = pick + body + pick;
+                    out.add(new Token(TokenType.STRING, body, raw, t.line, t.col));
+                    continue;
+                }
+            }
+            out.add(t);
+        }
+        return out;
+    }
+
     private static List<Token> apply(List<Token> tokens, boolean encode) {
         List<Token> out = new ArrayList<>(tokens.size());
         for (Token t : tokens) {

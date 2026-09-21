@@ -22,10 +22,18 @@ public class Formatter implements Node.Visitor {
     }
 
     public String format(Node root) {
-        if (config.solveExpressions && root instanceof Node.Block block) {
-            propagator = ConstantPropagator.analyze(block);
-            if (config.eliminateDeadCode) {
-                new DeadCodeEliminator(propagator).run(block);
+        if (root instanceof Node.Block block) {
+            if (config.renameLocals) {
+                LocalRenamer.run(block);
+            }
+            if (config.solveExpressions) {
+                propagator = ConstantPropagator.analyze(block);
+                if (config.eliminateDeadCode) {
+                    new DeadCodeEliminator(propagator).run(block);
+                }
+                if (config.removeUnusedLocals) {
+                    UnusedLocalEliminator.run(block);
+                }
             }
         }
         root.accept(this);
@@ -42,6 +50,7 @@ public class Formatter implements Node.Visitor {
     }
 
     private void indent() {
+        if (config.minify) return;
         if (config.useTabs) {
             output.append("\t".repeat(indentLevel));
         } else {
@@ -78,6 +87,75 @@ public class Formatter implements Node.Visitor {
         return null;
     }
 
+    private int findTableClose(List<Token> tokens, int open) {
+        int depth = 0;
+        for (int j = open; j < tokens.size(); j++) {
+            TokenType t = tokens.get(j).type;
+            if (t == TokenType.LCURLY) depth++;
+            else if (t == TokenType.RCURLY) {
+                depth--;
+                if (depth == 0) return j;
+            }
+        }
+        return -1;
+    }
+
+    private int currentCol() {
+        int n = output.lastIndexOf("\n");
+        return n < 0 ? output.length() : output.length() - n - 1;
+    }
+
+    private boolean trySingleLineTable(List<Token> tokens, int open, int close) {
+        int est = 2;
+        for (int j = open + 1; j < close; j++) {
+            Token t = tokens.get(j);
+            if (t.type == TokenType.COMMENT) {
+                if (!config.minify) return false;
+                continue;
+            }
+            if (t.type == TokenType.NEWLINE) continue;
+            est += t.raw.length() + 1;
+        }
+        int base = currentCol();
+        if (needsIndent) base += config.useTabs ? indentLevel : indentLevel * config.indentWidth;
+        if (!config.minify && base + est > config.maxLineLength) return false;
+        int end = close - 1;
+        while (end > open && (tokens.get(end).type == TokenType.NEWLINE
+            || tokens.get(end).type == TokenType.COMMA
+            || tokens.get(end).type == TokenType.SEMI)) end--;
+        boolean av = false;
+        Token pv = tokens.get(open);
+        for (int j = open + 1; j <= end; j++) {
+            Token t = tokens.get(j);
+            if (t.type == TokenType.NEWLINE) continue;
+            String raw = (t.type == TokenType.SEMI) ? "," : t.raw;
+            Token cur = (t.type == TokenType.SEMI)
+                ? new Token(TokenType.COMMA, ",", t.line, t.col) : t;
+            if (needSpace(pv, cur, av, tokens, j)) output.append(' ');
+            output.append(raw);
+            needsIndent = false;
+            av = isValue(cur);
+            pv = cur;
+        }
+        output.append('}');
+        return true;
+    }
+
+    private void ensureTrailingComma() {
+        int k = output.length();
+        while (k > 0) {
+            char c = output.charAt(k - 1);
+            if (c == '\n' || c == ' ' || c == '\t' || c == '\r') k--;
+            else break;
+        }
+        if (k <= 0) return;
+        char lc = output.charAt(k - 1);
+        if (lc != ',' && lc != ';' && lc != '{') {
+            output.setLength(k);
+            output.append(',');
+        }
+    }
+
     @Override
     public void visit(Node.Block block) {
         boolean first = true;
@@ -88,7 +166,7 @@ public class Formatter implements Node.Visitor {
             }
             if (!first) {
                 nl();
-                if (config.preserveBlankLines && child.blankBefore > 0) {
+                if (!config.minify && config.preserveBlankLines && child.blankBefore > 0) {
                     int blanks = Math.min(child.blankBefore, config.maxBlankLines);
                     for (int b = 0; b < blanks; b++) {
                         nl();
@@ -106,10 +184,14 @@ public class Formatter implements Node.Visitor {
             ? propagator.substitute(stmt.tokens) : stmt.tokens;
         List<Token> tokens = config.solveExpressions
             ? ExpressionSolver.solve(raw) : raw;
+        if (config.solveExpressions && config.compoundAssign) {
+            tokens = CompoundAssign.convert(tokens);
+        }
         boolean afterValue = false;
         int tableDepth = 0;
         boolean suppressNextSpace = false;
         boolean suppressCloseBrace = false;
+        boolean sawBrace = false;
 
         for (int i = 0; i < tokens.size(); i++) {
             Token t = tokens.get(i);
@@ -120,6 +202,7 @@ public class Formatter implements Node.Visitor {
                 continue;
             }
             if (t.type == TokenType.COMMENT) {
+                if (config.minify) { afterValue = false; continue; }
                 Token before = prevMeaningful(tokens, i);
                 boolean inline = config.keepInlineComments && before != null
                     && !needsIndent && t.line == before.line;
@@ -155,7 +238,7 @@ public class Formatter implements Node.Visitor {
                         break;
                     }
                 }
-                boolean needSp = !suppressNextSpace && needSpace(prev, t, afterValue);
+                boolean needSp = !suppressNextSpace && needSpace(prev, t, afterValue, tokens, i);
                 suppressNextSpace = false;
                 if (needsIndent) {
                     indent();
@@ -171,6 +254,13 @@ public class Formatter implements Node.Visitor {
                     suppressCloseBrace = true;
                     continue;
                 }
+                int close = findTableClose(tokens, i);
+                if (close > 0 && trySingleLineTable(tokens, i, close)) {
+                    i = close;
+                    afterValue = true;
+                    continue;
+                }
+                sawBrace = true;
                 indentLevel++;
                 nl();
                 afterValue = false;
@@ -181,6 +271,8 @@ public class Formatter implements Node.Visitor {
                 if (suppressCloseBrace) {
                     suppressCloseBrace = false;
                 } else {
+                    if (sawBrace) ensureTrailingComma();
+                    sawBrace = false;
                     if (indentLevel > 0) indentLevel--;
                     nl();
                     wr(t.raw);
@@ -214,7 +306,7 @@ public class Formatter implements Node.Visitor {
                 }
             }
 
-            boolean needSp = !suppressNextSpace && needSpace(prev, t, afterValue);
+            boolean needSp = !suppressNextSpace && needSpace(prev, t, afterValue, tokens, i);
             suppressNextSpace = false;
             if (needsIndent) {
                 indent();
@@ -242,8 +334,17 @@ public class Formatter implements Node.Visitor {
         };
     }
 
-    private boolean needSpace(Token prev, Token curr, boolean afterValue) {
+    private boolean needSpace(Token prev, Token curr, boolean afterValue, List<Token> tokens, int i) {
         if (prev == null) return false;
+
+        if (curr.type == TokenType.QMARK) return false;
+        if (prev.type == TokenType.QMARK) return true;
+        if (prev.type == TokenType.ATRATE || curr.type == TokenType.ATRATE) return false;
+        if (curr.type == TokenType.LT && prev.type == TokenType.IDENTIFIER && isGenericOpen(tokens, i)) return false;
+        if (curr.type == TokenType.GT && isGenericClose(tokens, i)) return false;
+        if (curr.type == TokenType.SHR && isGenericClose(tokens, i)) return false;
+        if (prev.type == TokenType.GT && curr.type == TokenType.LPAREN && isGenericClose(tokens, i - 1)) return false;
+        if (prev.type == TokenType.LT && isGenericOpen(tokens, prevIndex(tokens, i))) return false;
 
         if (prev.type == TokenType.DOT || prev.type == TokenType.COLON) return false;
         if (curr.type == TokenType.DOT || curr.type == TokenType.COLON) return false;
@@ -306,6 +407,73 @@ public class Formatter implements Node.Visitor {
         return t == TokenType.NOT || t == TokenType.HASH;
     }
 
+    private boolean isGenericOpen(List<Token> tokens, int i) {
+        int depth = 0;
+        for (int j = i + 1; j < tokens.size() && j < i + 18; j++) {
+            TokenType t = tokens.get(j).type;
+            if (t == TokenType.LT) { depth++; continue; }
+            if (t == TokenType.GT || t == TokenType.SHR) {
+                if (depth == 0) return followsGeneric(tokens, j);
+                depth--;
+                if (t == TokenType.SHR) {
+                    if (depth == 0) return followsGeneric(tokens, j);
+                    depth--;
+                }
+                continue;
+            }
+            if (!isGenericPart(t)) return false;
+        }
+        return false;
+    }
+
+    private boolean isGenericClose(List<Token> tokens, int i) {
+        for (int j = i - 1; j >= 0 && j > i - 18; j--) {
+            if (tokens.get(j).type == TokenType.LT && isGenericOpen(tokens, j)) {
+                int depth = 0;
+                for (int k = j + 1; k <= i; k++) {
+                    TokenType t = tokens.get(k).type;
+                    if (t == TokenType.LT) depth++;
+                    else if (t == TokenType.GT || t == TokenType.SHR) {
+                        if (depth == 0) return k == i;
+                        depth--;
+                    }
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private boolean followsGeneric(List<Token> tokens, int j) {
+        for (int k = j + 1; k < tokens.size(); k++) {
+            TokenType t = tokens.get(k).type;
+            if (t == TokenType.NEWLINE || t == TokenType.COMMENT) continue;
+            return switch (t) {
+                case LPAREN, COLON, ASSIGN, COMMA, RPAREN, RBRACK, RCURLY,
+                     ARROW, EOF, END, ELSE, ELSEIF, THEN, DO, IN -> true;
+                default -> false;
+            };
+        }
+        return true;
+    }
+
+    private boolean isGenericPart(TokenType t) {
+        return switch (t) {
+            case IDENTIFIER, NUMBER, STRING, COLON, QMARK, PIPE, AMPERSAND,
+                 COMMA, DOT, LCURLY, RCURLY, LPAREN, RPAREN, LBRACK, RBRACK,
+                 ARROW, CONCAT, VARARG, TRUE, FALSE, NIL -> true;
+            default -> false;
+        };
+    }
+
+    private int prevIndex(List<Token> tokens, int i) {
+        for (int j = i - 1; j >= 0; j--) {
+            TokenType t = tokens.get(j).type;
+            if (t != TokenType.NEWLINE && t != TokenType.COMMENT) return j;
+        }
+        return -1;
+    }
+
     private boolean isLiteral(Token t) {
         return t.type == TokenType.IDENTIFIER || t.type == TokenType.NUMBER ||
                t.type == TokenType.STRING || t.type == TokenType.VARARG;
@@ -326,7 +494,8 @@ public class Formatter implements Node.Visitor {
             case PLUS, MINUS, STAR, SLASH, PERCENT, CARET, IDIV,
                  AMPERSAND, PIPE, TILDE, SHL, SHR,
                  EQ, NE, LE, GE, LT, GT, CONCAT,
-                 AND, OR, ASSIGN -> true;
+                 AND, OR, ASSIGN, PLUS_EQ, MINUS_EQ, STAR_EQ, SLASH_EQ,
+                 IDIV_EQ, PERCENT_EQ, CARET_EQ, CONCAT_EQ, ARROW -> true;
             default -> false;
         };
     }
@@ -338,6 +507,7 @@ public class Formatter implements Node.Visitor {
             wr(t.raw);
             return;
         }
+        if (config.minify) return;
         if (!needsIndent) nl();
         wr(t.raw);
     }
@@ -371,9 +541,11 @@ public class Formatter implements Node.Visitor {
     @Override
     public void visit(Node.RepeatStmt s) {
         printTokens(s.header);
-        indentLevel++; nl();
-        s.body.accept(this);
-        indentLevel--;
+        if (!s.body.children.isEmpty()) {
+            indentLevel++; nl();
+            s.body.accept(this);
+            indentLevel--;
+        }
         if (!s.untilTokens.isEmpty()) {
             nl();
             printTokens(s.untilTokens);
@@ -399,9 +571,11 @@ public class Formatter implements Node.Visitor {
     @Override
     public void visit(Node.DoStmt s) {
         printTokens(s.header);
-        indentLevel++; nl();
-        s.body.accept(this);
-        indentLevel--;
+        if (!s.body.children.isEmpty()) {
+            indentLevel++; nl();
+            s.body.accept(this);
+            indentLevel--;
+        }
         if (!s.endTokens.isEmpty()) {
             nl();
             printTokens(s.endTokens);
@@ -411,9 +585,11 @@ public class Formatter implements Node.Visitor {
     @Override
     public void visit(Node.ForStmt s) {
         printTokens(s.header);
-        indentLevel++; nl();
-        s.body.accept(this);
-        indentLevel--;
+        if (!s.body.children.isEmpty()) {
+            indentLevel++; nl();
+            s.body.accept(this);
+            indentLevel--;
+        }
         if (!s.endTokens.isEmpty()) {
             nl();
             printTokens(s.endTokens);
@@ -423,9 +599,11 @@ public class Formatter implements Node.Visitor {
     @Override
     public void visit(Node.WhileStmt s) {
         printTokens(s.header);
-        indentLevel++; nl();
-        s.body.accept(this);
-        indentLevel--;
+        if (!s.body.children.isEmpty()) {
+            indentLevel++; nl();
+            s.body.accept(this);
+            indentLevel--;
+        }
         if (!s.endTokens.isEmpty()) {
             nl();
             printTokens(s.endTokens);
@@ -442,6 +620,7 @@ public class Formatter implements Node.Visitor {
             Token t = tokens.get(i);
             if (t.type == TokenType.NEWLINE) { nl(); afterValue = false; continue; }
             if (t.type == TokenType.COMMENT) {
+                if (config.minify) { afterValue = false; continue; }
                 if (!needsIndent) output.append(' ');
                 wr(t.raw);
                 afterValue = false;
@@ -452,7 +631,7 @@ public class Formatter implements Node.Visitor {
                 prev = null;
                 break;
             }
-            if (prev != null && needSpace(prev, t, afterValue)) {
+            if (prev != null && needSpace(prev, t, afterValue, tokens, i)) {
                 output.append(' ');
                 needsIndent = false;
             }

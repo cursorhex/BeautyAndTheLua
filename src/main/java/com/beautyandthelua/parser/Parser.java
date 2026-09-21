@@ -394,6 +394,15 @@ public class Parser {
             if (seenParen && parenDepth == 0) break;
             if (t.value.equals("end")) return node;
         }
+        if (seenParen && parenDepth == 0 && pos < tokens.size()
+            && peek().type == TokenType.COLON) {
+            while (pos < tokens.size()) {
+                Token nt = peek();
+                if (nt.type == TokenType.NEWLINE || nt.type == TokenType.EOF
+                    || nt.type == TokenType.COMMENT) break;
+                node.header.add(advance());
+            }
+        }
         attachTrailingComment(node.header);
         parseBlock(node.body);
         if (pos < tokens.size() && peek().value.equals("end")) {

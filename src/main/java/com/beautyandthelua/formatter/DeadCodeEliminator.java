@@ -24,11 +24,40 @@ public class DeadCodeEliminator {
     private void rewriteBlock(Node.Block block) {
         List<Node> out = new ArrayList<>(block.children.size());
         for (Node child : block.children) {
-            Node r = rewriteNode(child);
-            if (r != null) out.add(r);
+            out.addAll(rewriteNodes(child));
         }
         block.children.clear();
         block.children.addAll(out);
+    }
+
+    private List<Node> rewriteNodes(Node n) {
+        if (n instanceof Node.DoStmt d) {
+            rewriteBlock(d.body);
+            return inlineDo(d);
+        }
+        Node r = rewriteNode(n);
+        if (r instanceof Node.DoStmt d2) {
+            return inlineDo(d2);
+        }
+        return r == null ? List.of() : List.of(r);
+    }
+
+    private static List<Node> inlineDo(Node.DoStmt d) {
+        if (d.body.children.isEmpty()) return List.of();
+        if (d.body.children.stream().noneMatch(DeadCodeEliminator::declaresLocal)) {
+            Node first = d.body.children.get(0);
+            first.blankBefore = Math.max(first.blankBefore, d.blankBefore);
+            return new ArrayList<>(d.body.children);
+        }
+        return List.of(d);
+    }
+
+    private static boolean declaresLocal(Node n) {
+        if (n instanceof Node.FuncStmt fn) return fn.isLocal;
+        if (n instanceof Node.Stmt s) {
+            return !s.tokens.isEmpty() && s.tokens.get(0).type == TokenType.LOCAL;
+        }
+        return false;
     }
 
     private Node rewriteNode(Node n) {
@@ -45,10 +74,6 @@ public class DeadCodeEliminator {
         if (n instanceof Node.ForStmt f) {
             rewriteBlock(f.body);
             return f;
-        }
-        if (n instanceof Node.DoStmt d) {
-            rewriteBlock(d.body);
-            return d;
         }
         if (n instanceof Node.RepeatStmt r) {
             rewriteBlock(r.body);

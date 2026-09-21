@@ -70,20 +70,42 @@ public class Lexer {
                 case ']': advance(); emit(TokenType.RBRACK, "]"); break;
                 case ',': advance(); emit(TokenType.COMMA, ","); break;
                 case ';': advance(); emit(TokenType.SEMI, ";"); break;
-                case '+': advance(); emit(TokenType.PLUS, "+"); break;
-                case '-': advance(); emit(TokenType.MINUS, "-"); break;
-                case '*': advance(); emit(TokenType.STAR, "*"); break;
-                case '^': advance(); emit(TokenType.CARET, "^"); break;
-                case '%': advance(); emit(TokenType.PERCENT, "%"); break;
+                case '+':
+                    if (peek(1) == '=') { advance(); advance(); emit(TokenType.PLUS_EQ, "+="); }
+                    else { advance(); emit(TokenType.PLUS, "+"); }
+                    break;
+                case '-':
+                    if (peek(1) == '=') { advance(); advance(); emit(TokenType.MINUS_EQ, "-="); }
+                    else if (peek(1) == '>') { advance(); advance(); emit(TokenType.ARROW, "->"); }
+                    else { advance(); emit(TokenType.MINUS, "-"); }
+                    break;
+                case '*':
+                    if (peek(1) == '=') { advance(); advance(); emit(TokenType.STAR_EQ, "*="); }
+                    else { advance(); emit(TokenType.STAR, "*"); }
+                    break;
+                case '^':
+                    if (peek(1) == '=') { advance(); advance(); emit(TokenType.CARET_EQ, "^="); }
+                    else { advance(); emit(TokenType.CARET, "^"); }
+                    break;
+                case '%':
+                    if (peek(1) == '=') { advance(); advance(); emit(TokenType.PERCENT_EQ, "%="); }
+                    else { advance(); emit(TokenType.PERCENT, "%"); }
+                    break;
                 case '#': advance(); emit(TokenType.HASH, "#"); break;
                 case '&': advance(); emit(TokenType.AMPERSAND, "&"); break;
                 case '|': advance(); emit(TokenType.PIPE, "|"); break;
+                case '?': advance(); emit(TokenType.QMARK, "?"); break;
+                case '@': advance(); emit(TokenType.ATRATE, "@"); break;
+                case '`': readInterpolatedString(); break;
 
                 case '.':
                     if (peek(1) == '.') {
                         if (peek(2) == '.') {
                             advance(); advance(); advance();
                             emit(TokenType.VARARG, "...");
+                        } else if (peek(2) == '=') {
+                            advance(); advance(); advance();
+                            emit(TokenType.CONCAT_EQ, "..=");
                         } else {
                             advance(); advance();
                             emit(TokenType.CONCAT, "..");
@@ -154,8 +176,16 @@ public class Lexer {
 
                 case '/':
                     if (peek(1) == '/') {
+                        if (peek(2) == '=') {
+                            advance(); advance(); advance();
+                            emit(TokenType.IDIV_EQ, "//=");
+                        } else {
+                            advance(); advance();
+                            emit(TokenType.IDIV, "//");
+                        }
+                    } else if (peek(1) == '=') {
                         advance(); advance();
-                        emit(TokenType.IDIV, "//");
+                        emit(TokenType.SLASH_EQ, "/=");
                     } else {
                         advance();
                         emit(TokenType.SLASH, "/");
@@ -351,6 +381,35 @@ public class Lexer {
                     value.append('\\').append(esc);
                 }
             } else if (c == quote) {
+                raw.append(advanceChar());
+                emit(TokenType.STRING, value.toString(), raw.toString());
+                return;
+            } else if (c == '\n' || c == '\r') {
+                error("unfinished string");
+            } else {
+                char ch = advanceChar();
+                raw.append(ch);
+                value.append(ch);
+            }
+        }
+    }
+
+    private void readInterpolatedString() {
+        StringBuilder raw = new StringBuilder();
+        raw.append(advanceChar());
+        StringBuilder value = new StringBuilder();
+        while (true) {
+            if (pos >= source.length()) {
+                error("unfinished string");
+            }
+            char c = peek();
+            if (c == '\\') {
+                raw.append(advanceChar());
+                if (pos >= source.length()) error("unfinished string");
+                char esc = advanceChar();
+                raw.append(esc);
+                value.append('\\').append(esc);
+            } else if (c == '`') {
                 raw.append(advanceChar());
                 emit(TokenType.STRING, value.toString(), raw.toString());
                 return;

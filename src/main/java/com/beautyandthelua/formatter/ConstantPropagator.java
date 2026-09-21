@@ -36,7 +36,7 @@ public class ConstantPropagator {
                 Token prev = prevMeaningful(tokens, i);
                 Token next = nextMeaningful(tokens, i);
                 boolean isField = prev != null && (prev.type == TokenType.DOT || prev.type == TokenType.COLON);
-                boolean isTarget = next != null && next.type == TokenType.ASSIGN;
+                boolean isTarget = next != null && isAssignOp(next.type);
                 if (!isField && !isTarget) {
                     Token lit = env.get(t.value);
                     out.add(new Token(lit.type, lit.value, lit.raw, t.line, t.col));
@@ -201,11 +201,19 @@ public class ConstantPropagator {
             switch (t) {
                 case LPAREN, LBRACK, LCURLY -> depth++;
                 case RPAREN, RBRACK, RCURLY -> depth--;
-                case ASSIGN -> { if (depth == 0) return i; }
                 default -> { }
             }
+            if (depth == 0 && isAssignOp(t)) return i;
         }
         return -1;
+    }
+
+    private static boolean isAssignOp(TokenType t) {
+        return switch (t) {
+            case ASSIGN, PLUS_EQ, MINUS_EQ, STAR_EQ, SLASH_EQ,
+                 IDIV_EQ, PERCENT_EQ, CARET_EQ, CONCAT_EQ -> true;
+            default -> false;
+        };
     }
 
     private static List<String> localDeclNames(List<Token> tokens) {

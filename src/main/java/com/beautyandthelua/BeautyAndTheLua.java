@@ -26,8 +26,21 @@ public class BeautyAndTheLua {
     }
 
     public String beautify(String source, String filename) {
+        String prev = source;
+        for (int i = 0; i < 4; i++) {
+            String next = formatOnce(prev, filename);
+            if (next.equals(prev)) return next;
+            prev = next;
+        }
+        return prev;
+    }
+
+    private String formatOnce(String source, String filename) {
         Lexer lexer = new Lexer(source, filename);
         List<Token> tokens = lexer.tokenize();
+        if (config.normalizeQuotes) {
+            tokens = com.beautyandthelua.formatter.StringTransformer.normalize(tokens);
+        }
         if (config.decodeStringEscapes) {
             tokens = com.beautyandthelua.formatter.StringTransformer.decode(tokens);
         }
@@ -68,6 +81,10 @@ public class BeautyAndTheLua {
         System.out.println("  -d, --decode-strings    Decode string escapes to readable characters");
         System.out.println("  -E, --encode-strings    Encode strings as \\ddd decimal escapes");
         System.out.println("      --no-dead-code      Disable dead code elimination");
+        System.out.println("      --no-unused-locals  Keep unused pure locals");
+        System.out.println("      --compound-assign   Rewrite x = x + 1 as x += 1");
+        System.out.println("      --minify            Compact output, no indent or comments");
+        System.out.println("      --rename-locals     Rename obfuscated locals to v1, v2, ...");
         System.out.println("  -v, --version           Show version");
         System.out.println("  -h, --help              Show this help");
     }
@@ -110,6 +127,18 @@ public class BeautyAndTheLua {
                     break;
                 case "--no-dead-code":
                     config.eliminateDeadCode = false;
+                    break;
+                case "--no-unused-locals":
+                    config.removeUnusedLocals = false;
+                    break;
+                case "--compound-assign":
+                    config.compoundAssign = true;
+                    break;
+                case "--minify":
+                    config.minify = true;
+                    break;
+                case "--rename-locals":
+                    config.renameLocals = true;
                     break;
                 case "-o": case "--output":
                     outputFile = args[++i];

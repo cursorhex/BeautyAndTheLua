@@ -11,6 +11,10 @@ A universal Lua/Luau code beautifier. Supports Lua 5.1, 5.2, 5.3, 5.4, Luau (Rob
 - Configurable: indent width, tabs vs spaces, spacing around operators, and more
 - Constant folding: simplifies constant arithmetic and propagates constant locals (on by default)
 - Dead code elimination: removes branches whose conditions fold to a constant (on by default)
+- Unused locals: drops `local x = <literal>` never read (on by default)
+- Compound assign: rewrites `x = x + 1` as `x += 1` (opt-in)
+- Minify: compact output without indent or comments (opt-in)
+- Rename locals: renames `_0x...` locals to `v1, v2, ...` (opt-in)
 - String escapes: decode `\ddd` escapes to readable text or re-encode them
 - Check mode: verify formatting without modifying files (`--check`)
 - Recursive: process entire directory trees (`--recursive`)
@@ -33,6 +37,10 @@ BeautyAndTheLua [options] <file|directory>
 | `-d, --decode-strings` | Decode string escapes to readable characters |
 | `-E, --encode-strings` | Encode strings as `\ddd` decimal escapes |
 | `--no-dead-code` | Disable dead code elimination |
+| `--no-unused-locals` | Keep unused pure locals |
+| `--compound-assign` | Rewrite `x = x + 1` as `x += 1` |
+| `--minify` | Compact output, no indent or comments |
+| `--rename-locals` | Rename obfuscated locals to `v1, v2, ...` |
 | `-o, --output <file>` | Write to file instead of in-place |
 | `--stdin` | Read source from stdin |
 | `-r, --recursive` | Process directories recursively |
@@ -65,6 +73,15 @@ java -jar BeautyAndTheLua.jar -d script.lua
 
 # Encode strings as decimal escapes
 java -jar BeautyAndTheLua.jar -E script.lua
+
+# Rewrite x = x + 1 as x += 1
+java -jar BeautyAndTheLua.jar --compound-assign script.lua
+
+# Minify
+java -jar BeautyAndTheLua.jar --minify script.lua
+
+# Rename obfuscated local names
+java -jar BeautyAndTheLua.jar --rename-locals script.lua
 
 # Read from stdin, write to stdout
 cat script.lua | java -jar BeautyAndTheLua.jar --stdin > formatted.lua
@@ -164,10 +181,11 @@ and unreachable code is dropped. Runs by default; pass `--no-dead-code` to keep
 every branch.
 
 - `if false then ... end` is removed entirely.
-- `if true then X end` becomes `do X end`, preserving the scope of any locals.
+- `if true then X end` inlines `X`, or becomes `do X end` when `X` declares locals.
 - Dead `elseif` clauses are dropped, and the first clause that is always taken
   turns the rest of the chain into a plain block.
 - `while false do ... end` is removed.
+- Empty `do end` is removed, and `do X end` without locals inlines `X`.
 
 Conditions are only resolved when they fold to a single literal, so anything
 depending on runtime values is left untouched.
@@ -190,13 +208,17 @@ unsupported escape (unicode or `\z`) are left untouched.
 ## Supported Syntax
 
 - All Lua 5.1 to 5.4 keywords and operators (`::`, `//`, `<<`, `>>`, `&`, `|`, `~`)
-- Luau extensions (`continue`, `type`, `export type`, `typeof`)
+- Luau extensions (`continue`, `type`, `export type`, `typeof`, compound assign
+  `+= -= *= /= //= %= ^= ..=`, `?`, `->`, `@attributes`, generics `f<T>`,
+  union/intersection types, interpolated strings)
 - Long strings and comments (`[[...]]`, `[=[...]=]`)
 - Shebang lines (`#!/usr/bin/env lua`)
 - Goto labels (`::label::`)
 - Numeric and generic `for` loops
 - `repeat...until`, `while...do`, `if...then...elseif...else...end`
 - Nested block structures
+- Single-line tables when they fit `maxLineLength` (default 100), trailing
+  comma in multi-line tables, normalized quotes
 
 ## License
 
