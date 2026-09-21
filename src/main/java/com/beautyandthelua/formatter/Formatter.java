@@ -432,32 +432,6 @@ public class Formatter implements Node.Visitor {
         }
     }
 
-    @Override
-    public void visit(Node.TableNode t) {
-        wr("{");
-        boolean single = true;
-        int tc = 0;
-        for (Node c : t.fields.children) {
-            if (c instanceof Node.Stmt s) tc += s.tokens.size();
-            else tc++;
-        }
-        single = tc <= config.singleLineTableMaxFields && config.singleLineTableIfSimple;
-
-        if (single) {
-            indentLevel++;
-            for (Node c : t.fields.children) {
-                if (c instanceof Node.Stmt s) printTokens(s.tokens);
-                else if (c instanceof Node.Comment cn) { wr(" "); wr(cn.token.raw); }
-            }
-            indentLevel--;
-        } else {
-            indentLevel++; nl();
-            t.fields.accept(this);
-            indentLevel--; nl();
-        }
-        for (Token tk : t.trailingTokens) wr(tk.raw);
-    }
-
     private void printTokens(java.util.List<Token> tokenList) {
         java.util.List<Token> propagated = config.solveExpressions && propagator != null
             ? propagator.substitute(tokenList) : tokenList;

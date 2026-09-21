@@ -27,7 +27,6 @@ BeautyAndTheLua [options] <file|directory>
 |--------|-------------|
 | `-i, --indent <n>` | Indent width (default: 4) |
 | `-t, --tabs` | Use tabs for indentation |
-| `-w, --width <n>` | Max line length (default: 120) |
 | `-c, --check` | Check formatting without modifying files |
 | `-e, --solve-expressions` | Fold constant arithmetic and propagate constant locals (on by default) |
 | `--no-solve-expressions` | Disable constant folding and propagation |
@@ -120,6 +119,9 @@ With `-e` enabled:
 | `local y = 2 + 3 * 4` | `local y = 14` |
 | `local z = 2 ^ 3 ^ 2` | `local z = 512` |
 | `local x = 5; local y = x + 3` | `local y = 8` |
+| `local s = "a" .. "b"` | `local s = "ab"` |
+| `local b = not nil` | `local b = true` |
+| `local x: number = 5; local y = x + 1` | `local y = 6` |
 
 ## Constant folding and propagation
 
@@ -129,12 +131,14 @@ formatting:
 
 - **ExpressionSolver** folds constant sub-expressions. It parses each expression
   respecting Lua operator precedence and associativity, so `2 + 3 * 4` becomes `14`
-  and `2 ^ 3 ^ 2` becomes `512`. A result is only substituted when it is an exact
-  integer or a boolean, so folding never changes program behavior. Hex floats and
-  anything non-constant are left untouched.
+  and `2 ^ 3 ^ 2` becomes `512`. It folds exact integers, hex floats (`0x1p4`),
+  string concat (`"a" .. "b"`), boolean `and`/`or`/`not`, and `==`/`~=` on
+  numbers, strings and booleans. A result is only substituted when it is exact,
+  so folding never changes program behavior. Anything non-constant is left untouched.
 - **ConstantPropagator** replaces references to constant locals with their values.
   A local is propagated only when it is effectively final: declared once as
-  `local n = <literal>` and never reassigned in the region where it is visible.
+  `local n = <literal>` (Luau type annotations like `local n: number = 5` count)
+  and never reassigned in the region where it is visible.
   Scopes are tracked properly, so a `local` inside a nested block or function
   never leaks into the enclosing scope.
 
@@ -177,7 +181,7 @@ Two optional, opposite transforms rewrite short-string literals before parsing:
   Control characters, quotes and backslashes stay escaped; bytes outside
   printable ASCII are kept as `\ddd`.
 - **Encode** (`-E` / `encodeStringEscapes`): renders every byte as a `\ddd`
-  decimal escape, the form many obfuscators emit. `"Hi"` becomes `"\72\105"`.
+  decimal escape, the form many obfuscators emit. `"Hi"` becomes `"\072\105"`.
 
 Both decode the literal to its raw bytes first, so each direction is idempotent
 and the two can be chained. Long strings (`[[...]]`) and literals containing an

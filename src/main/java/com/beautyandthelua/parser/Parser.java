@@ -92,7 +92,7 @@ public class Parser {
                         seenContent = true;
                         justAddedNode = false;
                     } else if (justAddedNode) {
-                        justAddedNode = false; // this newline terminates the node just added
+                        justAddedNode = false;
                     } else if (seenContent) {
                         pendingBlank++;
                     }

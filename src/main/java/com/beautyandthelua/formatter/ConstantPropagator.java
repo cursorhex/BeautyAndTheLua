@@ -97,8 +97,6 @@ public class ConstantPropagator {
             }
             for (String n : funcParamNames(fn.header)) body.declare(n);
             scope.children.add(body);
-        } else if (node instanceof Node.TableNode tn) {
-            scope.children.add(buildScope(tn.fields));
         }
     }
 
@@ -118,7 +116,6 @@ public class ConstantPropagator {
             record(s.tokens, env);
             applyStmtEffect(s.tokens, scope, env);
         } else if (child instanceof Node.Comment) {
-            // no effect
         } else if (child instanceof Node.IfStmt ifs) {
             for (Node.IfClause c : ifs.clauses) {
                 record(c.header, env);
@@ -155,8 +152,6 @@ public class ConstantPropagator {
             recordExcluding(fn.header, env, headerExcl);
             walk(fn.body, scope.children.get(childIdx++), env, params);
             for (String n : funcAssignTargets(fn.header)) env.remove(n);
-        } else if (child instanceof Node.TableNode tn) {
-            walk(tn.fields, scope.children.get(childIdx++), env, Set.of());
         }
         return childIdx;
     }
@@ -225,7 +220,6 @@ public class ConstantPropagator {
                 if (prev != null && (prev.type == TokenType.DOT || prev.type == TokenType.COLON)) continue;
                 names.add(t.value);
             } else if (t.type == TokenType.COLON) {
-                // Luau type annotation: skip the type identifier that follows.
                 i++;
             }
         }
@@ -265,7 +259,7 @@ public class ConstantPropagator {
         int end;
         int start = isLocal ? 1 : 0;
         if (eq == -1) {
-            if (!isLocal) return names; // plain expression / call: nothing is an lvalue
+            if (!isLocal) return names;
             end = tokens.size();
         } else {
             end = eq;
@@ -277,20 +271,19 @@ public class ConstantPropagator {
                 if (prev != null && (prev.type == TokenType.DOT || prev.type == TokenType.COLON)) continue;
                 names.add(t.value);
             } else if (isLocal && t.type == TokenType.COLON) {
-                i++; // skip Luau type identifier
+                i++;
             }
         }
         return names;
     }
 
     private static Token singleLiteralDecl(List<Token> tokens) {
-        if (tokens.size() < 4) return null;
-        if (tokens.get(0).type != TokenType.LOCAL) return null;
-        if (tokens.get(1).type != TokenType.IDENTIFIER) return null;
-        if (tokens.get(2).type != TokenType.ASSIGN) return null;
-        Token val = tokens.get(3);
+        if (tokens.isEmpty() || tokens.get(0).type != TokenType.LOCAL) return null;
+        int eq = topLevelAssign(tokens);
+        if (eq == -1 || eq + 1 >= tokens.size()) return null;
+        Token val = tokens.get(eq + 1);
         if (!isLiteral(val)) return null;
-        for (int i = 4; i < tokens.size(); i++) {
+        for (int i = eq + 2; i < tokens.size(); i++) {
             TokenType t = tokens.get(i).type;
             if (t != TokenType.NEWLINE && t != TokenType.COMMENT) return null;
         }
@@ -315,7 +308,6 @@ public class ConstantPropagator {
     }
 
     private static List<String> funcAssignTargets(List<Token> header) {
-
         int eq = topLevelAssign(header);
         if (eq > 0) {
             List<String> names = new ArrayList<>();
@@ -332,7 +324,6 @@ public class ConstantPropagator {
             }
             return names;
         }
-        // Declaration form: `function name(...)` -> reassigns a plain global name.
         if (header.size() >= 2 && header.get(0).type == TokenType.FUNCTION
             && header.get(1).type == TokenType.IDENTIFIER) {
             Token after = header.size() >= 3 ? header.get(2) : null;

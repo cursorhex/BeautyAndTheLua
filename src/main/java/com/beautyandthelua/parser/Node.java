@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public abstract class Node {
-    /** Number of blank lines that appeared before this node in the source. */
     public int blankBefore;
 
     public abstract void accept(Visitor visitor);
@@ -21,7 +20,6 @@ public abstract class Node {
         void visit(DoStmt doStmt);
         void visit(ForStmt forStmt);
         void visit(WhileStmt whileStmt);
-        void visit(TableNode tableNode);
     }
 
     public static class Block extends Node {
@@ -118,20 +116,6 @@ public abstract class Node {
         public final List<Token> header = new ArrayList<>();
         public final Block body = new Block();
         public final List<Token> endTokens = new ArrayList<>();
-
-        @Override
-        public void accept(Visitor visitor) { visitor.visit(this); }
-    }
-
-    public static class TableNode extends Node {
-        public final Token openBrace;
-        public final Block fields = new Block();
-        public final List<Token> trailingTokens = new ArrayList<>();
-        public boolean singleLine;
-
-        public TableNode(Token openBrace) {
-            this.openBrace = openBrace;
-        }
 
         @Override
         public void accept(Visitor visitor) { visitor.visit(this); }

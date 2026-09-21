@@ -10,8 +10,7 @@ import java.util.List;
 public class ExpressionSolver {
 
     private static final int UNARY_PREC = 12;
-    // Largest magnitude that is exactly representable as a double integer.
-    private static final double MAX_EXACT_INT = 9007199254740992.0; // 2^53
+    private static final double MAX_EXACT_INT = 9007199254740992.0;
 
     public static List<Token> solve(List<Token> tokens) {
         return new ExpressionSolver(tokens).foldSpanUntil(null);
@@ -47,6 +46,18 @@ public class ExpressionSolver {
 
         BoolNode(boolean value, int line, int col) {
             this.value = value;
+            this.line = line;
+            this.col = col;
+        }
+    }
+
+    private static final class StrNode extends Node {
+        final String body;
+        final char quote;
+
+        StrNode(String body, char quote, int line, int col) {
+            this.body = body;
+            this.quote = quote;
             this.line = line;
             this.col = col;
         }
@@ -102,7 +113,7 @@ public class ExpressionSolver {
             if (prec < minPrec) break;
             boolean rightAssoc = op.type == TokenType.CARET || op.type == TokenType.CONCAT;
             int nextMin = rightAssoc ? prec : prec + 1;
-            pos++; // consume operator
+            pos++;
             Node right = parseExpr(nextMin);
             if (right == null) {
 
@@ -151,7 +162,12 @@ public class ExpressionSolver {
             case FALSE:
                 pos++;
                 return new BoolNode(false, t.line, t.col);
-            case STRING:
+            case STRING: {
+                pos++;
+                StrNode s = simpleString(t);
+                if (s != null) return s;
+                return new OpaqueNode(new ArrayList<>(List.of(t)), t.line, t.col);
+            }
             case NIL:
             case VARARG:
             case IDENTIFIER:
@@ -169,11 +185,11 @@ public class ExpressionSolver {
     private Node parseGrouping() {
         Token lp = tokens.get(pos);
         int save = pos;
-        pos++; // consume '('
+        pos++;
         Node inner = parseExpr(0);
         if (inner != null && pos < tokens.size() && tokens.get(pos).type == TokenType.RPAREN) {
-            pos++; // consume ')'
-            if (inner instanceof NumNode || inner instanceof BoolNode) {
+            pos++;
+            if (inner instanceof NumNode || inner instanceof BoolNode || inner instanceof StrNode) {
                 return inner;
             }
             List<Token> t = new ArrayList<>();
@@ -182,14 +198,13 @@ public class ExpressionSolver {
             t.add(new Token(TokenType.RPAREN, ")", lp.line, lp.col));
             return new OpaqueNode(t, lp.line, lp.col);
         }
-        // Not a clean "( expr )": treat '(' as a lone structural token.
         pos = save + 1;
         return new OpaqueNode(new ArrayList<>(List.of(lp)), lp.line, lp.col);
     }
 
     private Node parseTable() {
         Token lc = tokens.get(pos);
-        pos++; // consume '{'
+        pos++;
         List<Token> inner = foldSpanUntil(TokenType.RCURLY);
         List<Token> t = new ArrayList<>();
         t.add(lc);
@@ -261,6 +276,25 @@ public class ExpressionSolver {
                 return new BoolNode(computeCompare(op.type, a.value, b.value), left.line, left.col);
             }
         }
+        if (op.type == TokenType.CONCAT && left instanceof StrNode ls && right instanceof StrNode rs
+            && ls.quote == rs.quote && ls.body.length() + rs.body.length() < 2048) {
+            return new StrNode(ls.body + rs.body, ls.quote, left.line, left.col);
+        }
+        if (op.type == TokenType.EQ || op.type == TokenType.NE) {
+            Boolean eq = staticEq(left, right);
+            if (eq != null) {
+                boolean v = op.type == TokenType.EQ ? eq : !eq;
+                return new BoolNode(v, left.line, left.col);
+            }
+        }
+        if (op.type == TokenType.AND && left instanceof BoolNode lb) {
+            if (!lb.value) return new BoolNode(false, left.line, left.col);
+            return right;
+        }
+        if (op.type == TokenType.OR && left instanceof BoolNode lb2) {
+            if (lb2.value) return new BoolNode(true, left.line, left.col);
+            return right;
+        }
         List<Token> t = new ArrayList<>(emit(left));
         t.add(op);
         t.addAll(emit(right));
@@ -276,6 +310,12 @@ public class ExpressionSolver {
         }
         if (op.type == TokenType.NOT && operand instanceof BoolNode b) {
             return new BoolNode(!b.value, op.line, op.col);
+        }
+        if (op.type == TokenType.NOT && (operand instanceof NumNode || operand instanceof StrNode)) {
+            return new BoolNode(false, op.line, op.col);
+        }
+        if (op.type == TokenType.NOT && isNilOperand(operand)) {
+            return new BoolNode(true, op.line, op.col);
         }
         List<Token> t = new ArrayList<>();
         t.add(op);
@@ -309,7 +349,40 @@ public class ExpressionSolver {
                 b.value ? TokenType.TRUE : TokenType.FALSE,
                 b.value ? "true" : "false", node.line, node.col)));
         }
+        if (node instanceof StrNode s) {
+            String raw = s.quote + s.body + s.quote;
+            return new ArrayList<>(List.of(new Token(TokenType.STRING, s.body, raw, node.line, node.col)));
+        }
         return ((OpaqueNode) node).tokens;
+    }
+
+    private static StrNode simpleString(Token t) {
+        String raw = t.raw;
+        if (raw.length() < 2) return null;
+        char q = raw.charAt(0);
+        if ((q != '"' && q != '\'') || raw.charAt(raw.length() - 1) != q) return null;
+        String body = raw.substring(1, raw.length() - 1);
+        if (body.indexOf('\\') >= 0 || body.indexOf('\n') >= 0 || body.indexOf('\r') >= 0) return null;
+        return new StrNode(body, q, t.line, t.col);
+    }
+
+    private static boolean isNilOperand(Node n) {
+        if (n instanceof OpaqueNode o && o.tokens.size() == 1) {
+            return o.tokens.get(0).type == TokenType.NIL;
+        }
+        return false;
+    }
+
+    private static Boolean staticEq(Node left, Node right) {
+        if (left instanceof BoolNode a && right instanceof BoolNode b) return a.value == b.value;
+        if (left instanceof StrNode a && right instanceof StrNode b) return a.body.equals(b.body);
+        if (left instanceof NumNode a && right instanceof NumNode b) return a.value == b.value;
+        if (isNilOperand(left) && isNilOperand(right)) return true;
+        if (isNilOperand(left) || isNilOperand(right)) {
+            if (right instanceof NumNode || right instanceof StrNode || right instanceof BoolNode) return false;
+            if (left instanceof NumNode || left instanceof StrNode || left instanceof BoolNode) return false;
+        }
+        return null;
     }
 
 
@@ -320,7 +393,7 @@ public class ExpressionSolver {
             case MINUS -> a - b;
             case STAR -> a * b;
             case SLASH -> a / b;
-            case PERCENT -> a - Math.floor(a / b) * b; // Lua modulo semantics
+            case PERCENT -> a - Math.floor(a / b) * b;
             case IDIV -> Math.floor(a / b);
             case CARET -> Math.pow(a, b);
             default -> Double.NaN;
@@ -372,6 +445,8 @@ public class ExpressionSolver {
             String t = s.trim();
             if (t.length() > 2 && (t.charAt(0) == '0')
                 && (t.charAt(1) == 'x' || t.charAt(1) == 'X')) {
+                Double hexFloat = parseHexFloat(t);
+                if (hexFloat != null) return hexFloat;
                 String hex = t.substring(2);
                 if (hex.indexOf('.') >= 0 || hex.indexOf('p') >= 0 || hex.indexOf('P') >= 0) {
                     return null;
@@ -379,6 +454,31 @@ public class ExpressionSolver {
                 return (double) Long.parseLong(hex, 16);
             }
             return Double.parseDouble(t);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Double parseHexFloat(String t) {
+        int p = Math.max(t.indexOf('p'), t.indexOf('P'));
+        if (p < 0) return null;
+        String mant = t.substring(2, p);
+        String expS = t.substring(p + 1);
+        if (mant.isEmpty() || expS.isEmpty()) return null;
+        try {
+            int exp = Integer.parseInt(expS);
+            double m;
+            int dot = mant.indexOf('.');
+            if (dot < 0) {
+                m = Long.parseLong(mant, 16);
+            } else {
+                String intPart = mant.substring(0, dot);
+                String fracPart = mant.substring(dot + 1);
+                m = intPart.isEmpty() ? 0 : Long.parseLong(intPart, 16);
+                double f = fracPart.isEmpty() ? 0 : Long.parseLong(fracPart, 16) / Math.pow(16, fracPart.length());
+                m += f;
+            }
+            return m * Math.pow(2, exp);
         } catch (NumberFormatException e) {
             return null;
         }

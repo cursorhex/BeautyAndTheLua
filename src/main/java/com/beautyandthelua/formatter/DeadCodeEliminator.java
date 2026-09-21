@@ -58,10 +58,6 @@ public class DeadCodeEliminator {
             rewriteBlock(fn.body);
             return fn;
         }
-        if (n instanceof Node.TableNode tn) {
-            rewriteBlock(tn.fields);
-            return tn;
-        }
         return n;
     }
 

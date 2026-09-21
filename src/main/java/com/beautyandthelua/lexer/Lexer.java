@@ -373,6 +373,15 @@ public class Lexer {
             if (c == 'x' || c == 'X') {
                 raw.append(advanceChar());
                 while (isXDigit(peek())) raw.append(advanceChar());
+                if (peek() == '.' && isXDigit(peek(1))) {
+                    raw.append(advanceChar());
+                    while (isXDigit(peek())) raw.append(advanceChar());
+                }
+                if (peek() == 'p' || peek() == 'P') {
+                    raw.append(advanceChar());
+                    if (peek() == '+' || peek() == '-') raw.append(advanceChar());
+                    while (Character.isDigit(peek())) raw.append(advanceChar());
+                }
                 emit(TokenType.NUMBER, raw.toString());
                 return;
             }

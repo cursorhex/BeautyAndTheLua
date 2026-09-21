@@ -123,7 +123,7 @@ public class StringTransformer {
                     } else if (b >= 0x20 && b <= 0x7E) {
                         sb.append((char) b);
                     } else {
-                        sb.append('\\').append(b);
+                        sb.append(String.format("\\%03d", b));
                     }
             }
         }
@@ -133,7 +133,7 @@ public class StringTransformer {
     private static String renderEncoded(int[] bytes) {
         StringBuilder sb = new StringBuilder();
         for (int b : bytes) {
-            sb.append('\\').append(b);
+            sb.append(String.format("\\%03d", b));
         }
         return sb.toString();
     }

@@ -59,7 +59,6 @@ public class BeautyAndTheLua {
         System.out.println("Options:");
         System.out.println("  -i, --indent <n>        Indent width (default: 4)");
         System.out.println("  -t, --tabs              Use tabs for indentation");
-        System.out.println("  -w, --width <n>         Max line length (default: 120)");
         System.out.println("  -c, --check             Check formatting without modifying");
         System.out.println("  -o, --output <file>     Output file (default: stdout)");
         System.out.println("      --stdin             Read from stdin");
@@ -93,9 +92,6 @@ public class BeautyAndTheLua {
                     break;
                 case "-t": case "--tabs":
                     config.useTabs = true;
-                    break;
-                case "-w": case "--width":
-                    config.maxLineLength = Integer.parseInt(args[++i]);
                     break;
                 case "-c": case "--check":
                     checkMode = true;
@@ -180,13 +176,22 @@ public class BeautyAndTheLua {
                     System.err.println("Skipping directory (use -r to process): " + input);
                     continue;
                 }
+                if (finalOutput != null) {
+                    System.err.println("Cannot use --output with a directory: " + input);
+                    allOk = false;
+                    continue;
+                }
+                final BeautyAndTheLua fb = beautifier;
+                final boolean[] dirOk = {true};
                 try {
                     Files.walk(path)
                         .filter(Files::isRegularFile)
                         .filter(p -> p.toString().endsWith(".lua"))
-                        .forEach(p -> processFile(beautifier, p, finalCheck, finalOutput));
+                        .forEach(p -> { if (!processFile(fb, p, finalCheck, null)) dirOk[0] = false; });
+                    allOk &= dirOk[0];
                 } catch (IOException e) {
                     System.err.println("Error walking directory: " + e.getMessage());
+                    allOk = false;
                 }
             } else {
                 allOk &= processFile(beautifier, path, finalCheck, finalOutput);
